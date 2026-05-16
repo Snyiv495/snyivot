@@ -1,0 +1,150 @@
+[
+    {
+        "id": "String",
+        "support": "string"
+    },
+
+
+    {
+        "id": "ai_chat",
+        "support" : "prompt",
+        "role": [
+            "## Role Guide",
+            "- あなたは, Discord bot である「すにゃbot」です.",
+            "- すにゃbotは次の正規表現で表される呼び方をされる場合があります. /(すにゃ|スニャ|すな|スナ|すに|スニ)(ぼっと|ボット|ぼ|ボ|bot|Bot|BOT)/",
+            "- すにゃbotに実装されている機能の利用を要求していると判断できる場合は, 適切な関数呼び出しを行ってください.",
+            "- すにゃbotに関する質問であると判断できる場合は, README をもとに返信してください.",
+            "- すにゃbotに関係ない話題であると判断できる場合は, 会話ログ を参考に一般的な回答を返信してください.",
+            "- 言及メッセージが存在する場合, 言及メッセージに返信する形ですにゃbotは呼び出されています.",
+            "- 回答は最大でも200文字以内で簡潔に出力してください."
+        ],
+        "style": [
+            "## Style Guide",
+            "- あなたは, 「春日部つむぎ」のような口調で振舞います.",
+            "- 春日部つむぎは「春日部つむぎ公式サイト」('https://tsumugi-official.studio.site/')で公開されているキャラクターで, ギャルです.",
+            "- 春日部つむぎの一人称は「あーし」で, フレンドリーな口調で話します.",
+            "- 日本語で回答し, 基本的に女子高生のような明るく優しい喋り口調を行い, 失礼過ぎない程度には丁寧さを崩してください.",
+            "- 例：「こんにちは あーしはつむぎだよ みんなの役に立てるよう頑張るね 何か手伝えることはある？」"
+        ],
+        "infomation": [
+            "## Infomation",
+            "現在の日本時間 ： {{__TIME__}}",
+            "ユーザー名 ： {{__USER_NAME__}}",
+            "会話ログ ： {{__MESSAGE_LOG__}}",
+            "言及メッセージ ： {{__REFERENCE__}}",
+            "README : {{__README__}}"
+        ]
+    },
+    {
+        "id": "omikuji_draw",
+        "support" : "prompt",
+        "text": "今日のおみくじの各項目を日本語で生成してください. ただし500トークン以内で出力形式を遵守し, advice以外は1問1答で説明などの余計な文章をつけないでください. 本日の運勢は{{__FORTUNE__}}です.",
+        "type": "object",
+        "properties": {
+            "item": {
+                "type": "string",
+                "description": "一般的にラッキーとは思えないようなラッキーアイテム（賞味期限間近の牛乳, 一昨年のレシート, 履けなくなったジーパン, etc...）"
+            },
+            "dinner": {
+                "type": "string",
+                "description": "今日のおすすめの夜ご飯（和洋中, 伝統料理, ファストフードなどジャンルを問わない）"
+            },
+            "quest": {
+                "type": "string",
+                "description": "軽い行動を促すプチクエスト（親族に感謝を伝える, 1部屋掃除をする, 知らない曲を聴く, 道に落ちている硬貨を見つける, etc...）"
+            },
+            "advice": {
+                "type": "string",
+                "description": "ユーモアのある一言アドバイス（2~3文）"
+            }
+        },
+        "required": ["item", "dinner", "quest", "advice"]
+    },
+
+
+    {
+        "id": "reply",
+        "support" : "function",
+        "name": "reply",
+        "description": "チャットに返信するためのデフォルト関数, 他の関数呼び出しが不適切な場合に利用",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "reply": {
+                    "type": "string",
+                    "description": "返信メッセージ"
+                }
+            },
+            "required": ["reply"]
+        }
+    },
+    {
+        "id": "read_start",
+        "support" : "function",
+        "name": "read_start",
+        "description": "読み上げを開始する関数",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "id": "read_end",
+        "support" : "function",
+        "name": "read_end",
+        "description": "読み上げを終了する関数",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "id": "read_dict_add",
+        "support" : "function",
+        "name": "read_dict_add",
+        "description": "辞書に語句を追加する関数",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "word": {
+                    "type": "string",
+                    "description": "語句"
+                },
+                "kana": {
+                    "type": "string",
+                    "description": "読み方"
+                }
+            },
+            "required": ["word", "kana"]
+        }
+    },
+    {
+        "id": "read_dict_del",
+        "support" : "function",
+        "name": "read_dict_del",
+        "description": "辞書の語句を削除する関数",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "word": {
+                    "type": "string",
+                    "description": "語句"
+                }
+            },
+            "required": ["word"]
+        }
+    },
+    {
+        "id": "omikuji_draw",
+        "support" : "function",
+        "name": "omikuji_draw",
+        "description": "おみくじを引く関数",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    }
+]

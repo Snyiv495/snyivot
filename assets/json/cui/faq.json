@@ -1,0 +1,55 @@
+[
+    {
+        "name" : "string",
+        "description" : "string",
+        "subcommand" : [
+            {
+                "name" : "string",
+                "description" : "string",
+                "option" : [
+                    {
+                        "type" : "string || number || boolean",
+                        "name" : "string",
+                        "description" : "string",
+                        "autocomplete" : "true || false",
+                        "required" : "true || false",
+                        "max" : "number || null",
+                        "min" : "number || null",
+                        "choices" : [
+                            {
+                                "name" : "string",
+                                "value" : "string"
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "name" : "faq",
+        "description" : "FAQコマンド",
+        "subcommand" : [
+            {
+                "name" : "_ai",
+                "description" : "AI機能について",
+                "option" : []
+            },
+            {
+                "name" : "_omikuji",
+                "description" : "おみくじ機能について",
+                "option" : []
+            },
+            {
+                "name" : "_reaction",
+                "description" : "リアクション機能について",
+                "option" : []
+            },
+            {
+                "name" : "_read",
+                "description" : "読み上げ機能について",
+                "option" : []
+            }
+        ]
+    }
+]

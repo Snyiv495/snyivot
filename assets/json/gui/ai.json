@@ -1,0 +1,137 @@
+[
+    {
+        "id" : "String",
+        "content" : "String || null",
+        "embeds" : [
+            {
+                "title" : "String || null",
+                "url" : "String || null",
+                "thumbnail" : {
+                    "name" : "String || null",
+                    "path" : "String || null",
+                    "base64" : "String || null"
+                },
+                "description" : "String || null",                
+                "fields" : [
+                    {
+                        "name" : "String",
+                        "value" : "String",
+                        "inline" : "bool"
+                    }
+                ],
+                "image" : "String || null",
+                "footer" : {
+                    "text" : "String || null",
+                    "url" : "String || null"
+                },
+                "color" : "###### || null"
+            }
+        ],
+        "files" : [
+            {
+                "name" : "String || null",
+                "path" : "String || null",
+                "base64" : "String || null"
+            }
+        ],
+        "menus" : [
+            {
+                "id" : "String",
+                "placeholder" : "String",
+                "disabled" : "bool || null",
+                "options" : [
+                    {
+                        "label" : "String",
+                        "value" : "String",
+                        "description" : "String || null",
+                        "emoji" : "String || null"
+                    }
+                ]
+            }
+        ],
+        "buttons" : [
+            {
+                "label" : "String",
+                "id" : "String",
+                "emoji" : "String || null",
+                "style" : "String || null",
+                "disabled" : "bool || null"
+            }
+        ],
+        "modals" : [
+            {
+                "title" : "String",
+                "id" : "String",
+                "inputs" : [
+                    {
+                        "label" : "String",
+                        "id" : "String",
+                        "placeholder" : "String || null",
+                        "style" : "String || null",
+                        "max" : "Number || null",
+                        "min" : "Number || null",
+                        "required" : "bool || null"
+                    }
+                ]
+            }
+        ]
+    },
+    
+
+    {
+        "id" : "ai",
+        "content" : null,
+        "embeds" : [
+            {
+                "title" : "【AI】",
+                "url" : null,
+                "thumbnail" : {
+                    "name" : "thumbnail.png",
+                    "path" : "tsumugi/default.png",
+                    "base64" : null
+                },
+                "description" : "🗨️⠀ここからは利用できないよ\n⠀⠀⠀詳しくはFAQを参照してね",                
+                "fields" : [],
+                "image" : null,
+                "footer" : {
+                    "text" : null,
+                    "url" : null
+                },
+                "color" : "00FF00"
+            }
+        ],
+        "files" : [],
+        "menus" : [
+            {
+                "id" : "ai",
+                "placeholder" : "❌現在利用できません",
+                "disabled" : true,
+                "options" : []
+            }
+        ],
+        "buttons" : [
+            {
+                "label" : "戻る",
+                "id" : "disabled",
+                "emoji" : "↩️",
+                "style" : "Secondary",
+                "disabled" : true
+            },
+            {
+                "label" : "ホーム",
+                "id" : "home",
+                "emoji" : "🏠",
+                "style" : "Secondary",
+                "disabled" : false
+            },
+            {
+                "label" : "終わる",
+                "id" : "quit",
+                "emoji" : "⚠️",
+                "style" : "Danger",
+                "disabled" : false
+            }
+        ],
+        "modals" : []
+    }
+]

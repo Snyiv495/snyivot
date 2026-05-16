@@ -1,7 +1,7 @@
 /*****************
     faq.js
     スニャイヴ
-    2025/08/27
+    2026/05/06
 *****************/
 
 module.exports = {
@@ -9,19 +9,25 @@ module.exports = {
 }
 
 const gui = require("../core/gui");
-const helper = require("../core/helper");
+const utils = require("../core/utils");
 
 //FAQの実行
 async function execute(trigger, map){
     try{
-        const system_id = helper.getSystemId(trigger);
-        
+        const system_id = utils.getSystemId(trigger);
+        const bot_id = process.env.BOT_ID;
+        if(!bot_id) throw new Error(`faq.js => execute () \n not define .env : BOT_ID`);
+
         //延期の送信
-        if(helper.isInteraction(trigger) && !system_id.includes("modal")){
-            await helper.sendDefer(trigger);
+        if(utils.isInteraction(trigger) && !system_id.includes("modal")){
+            await utils.sendDefer(trigger);
         }
 
-        await helper.sendGUI(trigger, gui.create(map, system_id, {"{{__BOT_ID__}}":`<@${process.env.BOT_ID}>`}));
+        await utils.sendGUI(trigger, gui.create(map, system_id,
+            {
+                "{{__BOT_ID__}}" : `<@${bot_id}>`
+            }
+        ));
         return;
     }catch(e){
         throw new Error(`faq.js => execute() \n ${e}`);

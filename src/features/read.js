@@ -1,7 +1,7 @@
 /*****************
     read.js
     スニャイヴ
-    2025/11/12
+    2026/05/16
 *****************/
 
 module.exports = {
@@ -10,80 +10,136 @@ module.exports = {
     voiceState : voiceState
 }
 
+const {ChannelType, PermissionFlagsBits} = require('discord.js');
 const {createAudioPlayer, createAudioResource, entersState, AudioPlayerStatus, StreamType} = require('@discordjs/voice');
 const {Readable} = require("stream");
+
 const db = require('../core/db');
 const gui = require('../core/gui');
+const utils = require('../core/utils');
 const vc = require('../core/vc');
-const helper = require('../core/helper');
-const voicevox = require('../integrations/voicevox');
+const vv = require('../integrations/voicevox');
 
 const MENU_MAX = 25;
 
-//読み上げ
-async function readText(trigger, map){
+//テキスト整形
+function formatText(message, map){
     try{
-        const user_id = helper.getUserId(trigger);
-        const guild_id = helper.getGuildId(trigger);
-        const user_info = await db.getUserInfo(user_id);
-        const server_info = await db.getServerInfo(guild_id);
-        const stream = new Readable();
-        const player = map.get(`read_voice_${map.get(`read_text_${trigger.channel.id}`)}`).player;
-
-        //整形
-        let text = trigger.cleanContent;
+        //置換
+        let text = message.cleanContent;
         text = text.replace(/(https?|ftp)(:\/\/[\w\/:%#\$&\?\(\)~\.=\+\-]+)/g, "URL省略");  //URL
         text = text.replace(/```([\s\S]+?)```/g, "");                                       //コートブロック
         text = text.replace(/~~([\s\S]+?)~~/g, "");                                         //打消し線
         text = text.replace(/\|\|([\s\S]+?)\|\|/g, "、");                                   //スポイラー
         text = text.replace(/:([\s\S]+?):/g, "$1");                                         //絵文字
         text = text.replace(/www+/g, "www");                                                //芝
+        text = text.replace(/～/g, "ー");                                                   //チルダ
         text = text.trim();
 
-        //ユーザー名を結合
-        if(server_info.read_username && (server_info.read_username_always || user_id != map.get(`read_text_pre_user_${guild_id}`))){
-            text = `${user_info.username ?? helper.getUserName(trigger)}さん、${text}`;
-        }
-
         //文字数制限
-        if(text.length > server_info.read_max+5){
-            text = `${text.substring(0, server_info.read_max)}以下略`;
+        for(const element of map.get("read_property_json")){
+            if(element.id === "read_text"){
+                const max = element.max;
+                const omit = element.omit;
+                if(text.length > max+omit.length) text = `${text.substring(0, max)}${omit}`;
+                return text;
+            }
         }
 
-        //VOICEVOXの音声合成
-        if(server_info.read_app === "VOICEVOX"){
+    }catch(e){
+        throw new Error(`read.js => formatText() \n ${e}`)
+    };
 
-            //オーバーライド
-            if(server_info.read_set_override){
+    throw new Error(`read.js => formatText() \n not define system id : ${utils.getSystemId(message)}`)
+}
+
+//テキスト読み上げ
+async function readText(message, map){
+    try{
+        //再生プレイヤーの取得
+        const channel_id = utils.getChannelId(message);
+        const read_channel = map.get(`read_channel_${channel_id}`);
+        const player = map.get(`read_subscribe_${read_channel}`)?.player;
+        if(!player) return;
+
+        //情報の取得
+        const user_id = utils.getUserId(message);
+        const guild_id = utils.getGuildId(message);
+        const user_info = await db.getUserInfo(user_id);
+        const guild_info = await db.getGuildInfo(guild_id);
+        let text = formatText(message, map);
+
+        //チェーン管理
+        const vv_chain = map.get(`vv_chain_${guild_id}`) ?? Promise.resolve();
+        const vv_chain_next = vv_chain.then(async () => {
+
+            let read_text_property = null;
+            let vv_property = null;
+            for(const element of map.get("read_property_json")){
+                if(element.id === "read_text"){
+                    read_text_property = element;
+                    break;
+                }
+            }
+            for(const element of map.get("read_property_json")){
+                if(element.id === "VOICEVOX"){
+                    vv_property = element;
+                    break;
+                }
+            }
+            if(!read_text_property) throw new Error(`read.js => readText() \n not define property id : ${utils.getSystemId(message)}`);
+            if(!vv_property) throw new Error(`read.js => readText() \n not define property id : VOICEVOX`);
+
+            //ユーザー名を結合
+            const timestamp = message.createdTimestamp;
+            const read_pre = map.get(`read_pre_${channel_id}`);
+            const read_name = (!read_pre || read_pre.user_id !== user_id || timestamp-(read_pre.timestamp ?? 0) > read_text_property.split_time);
+            if(read_name) text = `${user_info.username ?? utils.getUserName(message)}${user_info.honorific ?? read_text_property.honorific}${text}`;
+
+            //辞書の置換
+            if(map.get("vv_dictionary_id") !== guild_id){
+                await vv.postImportUserDict(guild_info.vv_dict ?? {});
+                map.set("vv_dictionary_id", guild_id);
+            }
+
+            //パラメータの置換
+            if(guild_info.read_override){
                 user_info.vv_id = null;
                 user_info.vv_pitch = null;
                 user_info.vv_intonation = null;
             }
 
-            //辞書の置き換え
-            if(map.get("voicevox_dictionary") != guild_id){
-                await voicevox.postImportUserDict(server_info.vv_dict);
-                map.set("voicevox_dictionary", guild_id);
-            }
+            //クエリ作成
+            const query = await vv.postAudioQuery(text, user_info.vv_id ?? guild_info.vv_id ?? vv_property.style_id);
+            query.data.pitchScale = user_info.vv_pitch ?? guild_info.vv_pitch ?? vv_property.pitch;
+            query.data.intonationScale = user_info.vv_intonation ?? guild_info.vv_intonation ?? vv_property.intonation;
+            query.data.speedScale = guild_info.vv_speed ?? vv_property.speed;
+            query.data.volumeScale = guild_info.vv_volume ?? vv_property.volume;
 
-            //クエリの作成
-            const res_query = await voicevox.postAudioQuery(text, user_info.vv_id??server_info.vv_id);
-            res_query.data.pitchScale = user_info.vv_pitch ?? server_info.vv_pitch;
-            res_query.data.intonationScale = user_info.vv_intonation ?? server_info.vv_intonation;
-            res_query.data.speedScale = server_info.vv_speed;
-            res_query.data.volumeScale = server_info.vv_volume;
+            //音声合成
+            const wav = (await vv.postSynthesis(query, user_info.vv_id ?? guild_info.vv_id ?? vv_property.style_id))?.data ?? null;
+            if(!wav) return;
 
-            //合成音声の作成
-            stream.push((await voicevox.postSynthesis(res_query, user_info.vv_id??server_info.vv_id)).data);
+            //ストリーム作成
+            const stream = new Readable();
+            stream.push(wav);
             stream.push(null);
-        }
 
-        //再生
-        if(player.state.status != AudioPlayerStatus.Idle){
-            await entersState(player, AudioPlayerStatus.Idle, 10000);
-        }
-        player.play(createAudioResource(stream, {inputType: StreamType.Arbitrary}));
-        map.set(`read_text_pre_user_${guild_id}`, user_id);
+            //再生
+            player.play(createAudioResource(stream, {inputType: StreamType.Arbitrary}));
+            await entersState(player, AudioPlayerStatus.Idle, 30000);
+
+            //ログの保存
+            map.set(`read_pre_${channel_id}`,
+                {
+                    user_id: user_id,
+                    timestamp: message.createdTimestamp
+                }
+            );
+        }).catch((e) => {
+            console.error(`read.js => readText() => vv_chain.then() \n ${e}`);
+        });
+        map.set(`vv_chain_${guild_id}`, vv_chain_next);
 
         return;
     }catch(e){
@@ -94,32 +150,48 @@ async function readText(trigger, map){
 //読み上げ開始
 async function start(trigger, map){
     try{
-        const text_channel = trigger.channel;
-        const voice_channel = trigger.member.voice.channel;
-        const old_voice_channel = trigger.guild.channels.cache.find((channel) => channel.type == 2 && channel.members.get(process.env.BOT_ID));
+        //情報の取得
+        const text_channel = utils.getChannelObj(trigger);
+        const old_voice_channel = map.get(`read_channel_${text_channel.id}`);
+        const new_voice_channel = trigger?.member?.voice?.channel ?? null;
 
         //読み上げ開始要件の確認
-        if((!(text_channel.type === 0 || text_channel.type === 2)) || (text_channel.type === 2 && !text_channel.joinable) || (!voice_channel) || (!voice_channel.joinable) || (!voice_channel.speakable) || (text_channel.type === 0 && !text_channel.members.find((member) => member.id === process.env.BOT_ID)) || (voice_channel.id === map.get(`read_text_${text_channel.id}`)) || (old_voice_channel && old_voice_channel.id != voice_channel.id)){
-            await helper.sendGUI(trigger, gui.create(map, helper.isInteraction(trigger)?"read_start_failure":"read_start_failure*", {"{{__TEXT_CHANNEL__}}":text_channel??"テキストチャンネル", "{{__VOICE_CHANNEL__}}":voice_channel??"ボイスチャンネル", "{{__REQUEST_USER_NAME__}}":helper.getUserName(trigger), "{{__REQUEST_USER_ICON__}}":helper.getUserObj(trigger).avatarURL()}));
-            return;
-        }
+        const start_error = async () => {
+            await utils.sendGUI(trigger, gui.create(map, !utils.isInteraction(trigger) ? "read_start_error" : "read_start_error_ephemeral",
+                {
+                    "{{__TEXT_CHANNEL__}}" : text_channel ?? "テキストチャンネル",
+                    "{{__VOICE_CHANNEL__}}" : new_voice_channel ?? "ボイスチャンネル",
+                    "{{__REQUEST_USER_NAME__}}" : utils.getUserName(trigger),
+                    "{{__REQUEST_USER_ICON__}}" : utils.getUserObj(trigger).avatarURL()
+                }
+            ));
+        };
+        if(!(text_channel.type === ChannelType.GuildText || text_channel.type === ChannelType.GuildVoice)) return await start_error();
+        if(text_channel.type === ChannelType.GuildText && !text_channel.members.find((member) => member.id === process.env.BOT_ID)) return await start_error();
+        if(!(new_voice_channel?.joinable && new_voice_channel?.speakable)) return await start_error();
+        if(old_voice_channel && old_voice_channel.id === new_voice_channel?.id) return await start_error();
 
         //VC接続
-        if(old_voice_channel?.id != voice_channel.id){
-            const new_voice_channel = await vc.connect(voice_channel);
-            map.set(`read_voice_${voice_channel.id}`, new_voice_channel.subscribe(createAudioPlayer()));
+        if(old_voice_channel?.id !== new_voice_channel.id){
+            const connect_voice_channel = await vc.connect(new_voice_channel);
+            map.set(`read_subscribe_${new_voice_channel.id}`, connect_voice_channel.subscribe(createAudioPlayer()));
         }
 
-        //チャンネル追加
-        map.set(`read_text_${text_channel.id}`, voice_channel.id);
-        trigger.cleanContent = `${text_channel.name}の読み上げを始めるよ`;
+        //読み上げチャンネルの追加
+        map.set(`read_channel_${text_channel.id}`, new_voice_channel.id);
+        trigger.cleanContent = `${text_channel.name}の読み上げを開始します`;
+        await readText(trigger, map);
 
         //開始の通知
-        if(helper.isInteraction(trigger)){
-            await helper.sendGUI(trigger, gui.create(map, "read"));
-        }
-        await helper.sendGUI(trigger.channel, gui.create(map, "read_start", {"{{__TEXT_CHANNEL__}}":text_channel,"{{__VOICE_CHANNEL__}}":voice_channel}));
-        await readText(trigger, map);
+        if(utils.isInteraction(trigger)) await utils.sendGUI(trigger, gui.create(map, "read"));
+        await utils.sendGUI(trigger.channel, gui.create(map, "read_start",
+            {
+                "{{__TEXT_CHANNEL__}}" : text_channel,
+                "{{__VOICE_CHANNEL__}}" : new_voice_channel,
+                "{{__REQUEST_USER_NAME__}}" : utils.getUserName(trigger),
+                "{{__REQUEST_USER_ICON__}}" : utils.getUserObj(trigger).avatarURL()
+            }
+        ));
 
         return;
     }catch(e){
@@ -130,36 +202,56 @@ async function start(trigger, map){
 //読み上げ終了
 async function end(trigger, map){
     try{
-        const text_channel = trigger.channel;
-        const voice_channel = trigger.member.voice.channel;
-        const old_voice_channel = trigger.guild.channels.cache.find((channel) => channel.type == 2 && channel.members.get(process.env.BOT_ID)); 
+        //情報の取得
+        const guild_id = utils.getGuildId(trigger);
+        const text_channel = utils.getChannelObj(trigger);
+        const old_voice_channel_id = map.get(`read_channel_${text_channel.id}`);
+        const new_voice_channel = trigger?.member?.voice?.channel ?? null;
 
         //読み上げ終了要件の確認
-        if(!voice_channel || (voice_channel != old_voice_channel) || (map.get(`read_text_${text_channel.id}`) != voice_channel.id)){
-            await helper.sendGUI(trigger, gui.create(map, helper.isInteraction(trigger)?"read_end_failure":"read_end_failure*", {"{{__TEXT_CHANNEL__}}":text_channel??"テキストチャンネル", "{{__VOICE_CHANNEL__}}":voice_channel??"ボイスチャンネル", "{{__REQUEST_USER_NAME__}}":helper.getUserName(trigger), "{{__REQUEST_USER_ICON__}}":helper.getUserObj(trigger).avatarURL()}));
-            return;
+        const end_error = async () => {
+            await utils.sendGUI(trigger, gui.create(map, !utils.isInteraction(trigger) ? "read_end_error" : "read_end_error_ephemeral",
+                {
+                    "{{__TEXT_CHANNEL__}}" : text_channel ?? "テキストチャンネル",
+                    "{{__VOICE_CHANNEL__}}" : new_voice_channel ?? "ボイスチャンネル",
+                    "{{__REQUEST_USER_NAME__}}" : utils.getUserName(trigger),
+                    "{{__REQUEST_USER_ICON__}}" : utils.getUserObj(trigger).avatarURL()
+                }
+            ));
         }
+        if(!old_voice_channel_id) return await end_error();
+        if(!new_voice_channel) return await end_error();
+        if(old_voice_channel_id !== new_voice_channel.id) return await end_error();
 
         //読み上げチャンネルの削除
-        trigger.cleanContent = `${text_channel.name}の読み上げを終わるよ`;
+        trigger.cleanContent = `${text_channel.name}の読み上げを終了します`;
         await readText(trigger, map);
-        map.delete(`read_text_${text_channel.id}`);
+        map.delete(`read_channel_${text_channel.id}`);
         
-
-        //他に読み上げをしているチャンネルの確認
-        const other_text_channel = await trigger.guild.channels.cache.find((channel) => map.get(`read_text_${channel.id}`));
-
         //読み上げを行っているチャンネルがなくなったら切断
-        if(!other_text_channel){
-            map.get(`read_voice_${voice_channel.id}`)?.connection.destroy();
-            map.delete(`read_voice_${voice_channel.id}`);
+        const guild = utils.getGuildObj(trigger);
+        const other_channel = guild.channels.cache.find((channel) => map.get(`read_channel_${channel.id}`));
+        if(!other_channel){
+            //チェーン管理
+            const vv_chain = map.get(`vv_chain_${guild_id}`) ?? Promise.resolve();
+            const vv_chain_next = vv_chain.then(async () => {
+                map.get(`read_subscribe_${old_voice_channel_id}`)?.connection.destroy();
+                map.delete(`read_subscribe_${old_voice_channel_id}`);
+            });
+            map.set(`vv_chain_${guild_id}`, vv_chain_next.catch(() => {}));
+            await vv_chain_next.catch((e) => {throw new Error(`read.js => end() => vv_chain.then() \n ${e}`)});
         }
         
         //終了の通知
-        if(helper.isInteraction(trigger)){
-            await helper.sendGUI(trigger, gui.create(map, "read"));
-        }
-        await helper.sendGUI(trigger.channel, gui.create(map, "read_end", {"{{__TEXT_CHANNEL__}}":text_channel, "{{__VOICE_CHANNEL__}}":voice_channel, "{{__REQUEST_USER_NAME__}}":helper.getUserName(trigger), "{{__REQUEST_USER_ICON__}}":helper.getUserObj(trigger).avatarURL()}));
+        if(utils.isInteraction(trigger)) await utils.sendGUI(trigger, gui.create(map, "read"));
+        await utils.sendGUI(trigger.channel, gui.create(map, "read_end",
+            {
+                "{{__TEXT_CHANNEL__}}" : text_channel,
+                "{{__VOICE_CHANNEL__}}" : new_voice_channel,
+                "{{__REQUEST_USER_NAME__}}" : utils.getUserName(trigger),
+                "{{__REQUEST_USER_ICON__}}" : utils.getUserObj(trigger).avatarURL()
+            }
+        ));
         
         return;
     }catch(e){
@@ -170,70 +262,85 @@ async function end(trigger, map){
 //辞書追加
 async function dictAdd(trigger, map){
     try{
-        const server_info = await db.getServerInfo(trigger.guild.id);
-        const input_word = helper.getArgValue(trigger, "word");
-        const input_kana = helper.getArgValue(trigger, "kana");
-        const input_accent = helper.getArgValue(trigger, "accent");
-        const input_priority = helper.getArgValue(trigger, "priority");
+        //情報の取得
+        const guild_id = utils.getGuildId(trigger);
+        const guild_info = await db.getGuildInfo(guild_id);
+        const input_word = utils.getArgValue(trigger, "word");
+        const input_kana = utils.getArgValue(trigger, "kana");
+        const input_accent = utils.getArgValue(trigger, "accent");
+        const input_priority = utils.getArgValue(trigger, "priority");
 
-        let word = input_word.substring(0, 10).trim();
-        let kana = input_kana.substring(0, 10).trim();
+        let read_dict_property = null;
+        for(const element of map.get("read_property_json")){
+            if(element.id === "read_dict"){
+                read_dict_property = element;
+                break;
+            }
+        }
+        if(!read_dict_property) throw new Error(`read.js => dictAdd() \n not define property id : VOICEVOX`);
+
+        let surface = input_word.trim();
+        let pronunciation = input_kana.trim();
         let accent = input_accent ? parseInt(input_accent) : NaN;
         let priority = input_priority ? parseInt(input_priority) : NaN;
 
-        //VOICEVOXの辞書追加
-        if(server_info.read_app === "VOICEVOX"){
-
-            //入力の整形
-            const audio_query = await voicevox.postAudioQuery(kana, 0);
-            word = word.replace(/[A-Za-z0-9]/g, function(str){return String.fromCharCode(str.charCodeAt(0) + 0xFEE0);});
-            kana = audio_query.data.kana.replace(/\/|、|_|'|？/g, "");
-            accent = !Number.isNaN(accent) ? Math.min(Math.max(accent, 1), audio_query.data.accent_phrases.moras.length-1) : 1;
-            priority = !Number.isNaN(priority) ? Math.min(Math.max(priority, 0), 10) : 9;
-
-            //辞書の置き換え
-            if(map.get("voicevox_dictionary") != trigger.guild.id){
-                await voicevox.postImportUserDict(server_info.vv_dict);
-                map.set("voicevox_dictionary", trigger.guild.id);
-            }
-
-            //単語の登録
-            const word_index = server_info.read_dict.findIndex(entry => entry.word === word);
-            if(word_index < 0){
-                await voicevox.postUserDictWord(word, kana, accent, priority);
-                server_info.read_dict.push({"word" : word, "kana" : kana});
-            }else{
-                const uuids = Object.keys(server_info.vv_dict);
-                for(let i=0; i<uuids.length; i++){
-                    if(server_info.vv_dict[uuids[i]].surface === word){
-                        await voicevox.putUserDictWord(uuids[i], word, kana, accent, priority);
-                        break;
-                    }
-                }
-                server_info.read_dict[word_index].kana = kana;
-            }
-            
-            //更新された辞書の取得
-            server_info.vv_dict = (await voicevox.getUserDict()).data;
-
-            //辞書の整合性の確認
-            const read_dict_set = new Set(server_info.read_dict.map(entry => entry.word));
-            for(const entry of Object.values(server_info.vv_dict)) {
-                if(!read_dict_set.has(entry.surface)){
-                    await helper.sendGUI(trigger, gui.create(map, helper.isInteraction(trigger)?"read_dict_add_interrupt_error":"read_dict_add_interrupt_error*", {"{{__REQUEST_USER_NAME__}}":helper.getUserName(trigger), "{{__REQUEST_USER_ICON__}}":helper.getUserObj(trigger).avatarURL()}))
-                    return;
-                }
-            }
+        //辞書追加要件の確認
+        const dict_add_error = async () => {
+            await utils.sendGUI(trigger, gui.create(map, !utils.isInteraction(trigger) ? "read_dict_add_error" : "read_dict_add_error_ephemeral"));
         }
+        if(surface.length > read_dict_property.surface_max) return await dict_add_error();
+        if(pronunciation.length > read_dict_property.pronunciation_max) return await dict_add_error();
+        
+        //チェーン管理
+        const vv_chain = map.get(`vv_chain_${guild_id}`) ?? Promise.resolve();
+        const vv_chain_next = vv_chain.then(async () => {
+            //クエリ作成
+            const audio_query = await vv.postAudioQuery(pronunciation, 0);
+            surface = surface.replace(/[A-Za-z0-9]/g, str => String.fromCharCode(str.charCodeAt(0)+0xFEE0));
+            pronunciation = audio_query.data.kana.replace(/[^ァ-ヴー]/g, "");
+            accent = !Number.isNaN(accent) ? Math.min(Math.max(accent, read_dict_property.accent_min), audio_query.data.accent_phrases[0].moras.length-1) : read_dict_property.accent_min;
+            priority = !Number.isNaN(priority) ? Math.min(Math.max(priority, read_dict_property.priority_min), read_dict_property.priority_max) : read_dict_property.priority_max;
+
+            //辞書の置換
+            if(map.get("vv_dictionary_id") !== guild_id){
+                await vv.postImportUserDict(guild_info.vv_dict ?? {});
+                map.set("vv_dictionary_id", guild_id);
+            }
+
+            //辞書検索
+            const dictionary = guild_info.vv_dict ?? {};
+            let uuid_exist = null;
+            for(const [uuid, entry] of Object.entries(dictionary)){
+                if(entry.surface === surface){
+                    uuid_exist = uuid;
+                    break;
+                }
+            }
+
+            //辞書のアップデート
+            if(uuid_exist) await vv.putUserDictWord(uuid_exist, surface, pronunciation, accent, priority);
+            if(!uuid_exist) await vv.postUserDictWord(surface, pronunciation, accent, priority);
+            guild_info.vv_dict = (await vv.getUserDict()).data;
+
+        });
+        map.set(`vv_chain_${guild_id}`, vv_chain_next.catch(() => {}));
+        await vv_chain_next.catch((e) => {
+            throw new Error(`read.js => dictAdd() => vv_chain.then() \n ${e}`)
+        });
 
         //サーバー情報の保存
-        await db.setServerInfo(trigger.guild.id, server_info);
+        await db.setGuildInfo(guild_id, guild_info);
 
         //辞書追加の通知
-        if(helper.isInteraction(trigger)){
-            await helper.sendGUI(trigger, gui.create(map, "read"));
-        }
-        await helper.sendGUI(trigger.channel, gui.create(map, "read_dict_add", {"{{__WORD__}}":word, "{{__KANA__}}":kana, "{{__REQUEST_USER_NAME__}}":helper.getUserName(trigger), "{{__REQUEST_USER_ICON__}}":helper.getUserObj(trigger).avatarURL()}))
+        if(utils.isInteraction(trigger)) await utils.sendGUI(trigger, gui.create(map, "read"));
+        await utils.sendGUI(trigger.channel, gui.create(map, "read_dict_add",
+            {
+                "{{__WORD__}}" : surface,
+                "{{__KANA__}}" : pronunciation,
+                "{{__REQUEST_USER_NAME__}}" : utils.getUserName(trigger),
+                "{{__REQUEST_USER_ICON__}}" : utils.getUserObj(trigger).avatarURL()
+            }
+        ));
         
         return;
     }catch(e){
@@ -244,63 +351,66 @@ async function dictAdd(trigger, map){
 //辞書削除
 async function dictDel(trigger, map){
     try{
-        const server_info = await db.getServerInfo(trigger.guild.id);
-        const input_word = helper.getArgValue(trigger, "word") ?? "";
-        const word = input_word.substring(0, 10).replace(/[A-Za-z0-9]/g, function(str){return String.fromCharCode(str.charCodeAt(0) + 0xFEE0);});
-        const word_index = server_info.read_dict.findIndex(entry => entry.word === word);
+        //情報の取得
+        const guild_id = utils.getGuildId(trigger);
+        const guild_info = await db.getGuildInfo(trigger.guild.id);
+        const input_word = utils.getArgValue(trigger, "word") ?? "";
+
+        //辞書検索
+        const surface = input_word.trim().replace(/[A-Za-z0-9]/g, str => String.fromCharCode(str.charCodeAt(0)+0xFEE0));
+        const dictionary = guild_info.vv_dict ?? {};
+        let uuid_exist = null;
+        for(const [uuid, entry] of Object.entries(dictionary)){
+            if(entry.surface === surface){
+                uuid_exist = uuid;
+                break;
+            }
+        }
 
         //辞書の送信
-        if(word_index < 0){
-            let str_csv = "語句,カナ\n";
-            for(const word_kana of server_info.read_dict){
-                str_csv += `${word_kana.word},${word_kana.kana}\n`;
-            }
-            await helper.sendGUI(trigger, gui.create(map, helper.isInteraction(trigger) ? "read_dict_del_send_csv" : "read_dict_del_send_csv*", {"{{__CSV_NAME__}}": "dictionary.csv", "{{__CSV_BASE64__}}":Buffer.from(str_csv, "utf-8").toString("base64"), "{{__REQUEST_USER_NAME__}}":helper.getUserName(trigger), "{{__REQUEST_USER_ICON__}}":helper.getUserObj(trigger).avatarURL()}));
+        if(!uuid_exist){
+            let dict_csv = "語句,カナ\n";
+            for(const [uuid, entry] of Object.entries(dictionary)) dict_csv += `"${entry.surface.replace(/"/g, '""')}","${entry.pronunciation.replace(/"/g, '""')}"\n`;
+            await utils.sendGUI(trigger, gui.create(map, !utils.isInteraction(trigger) ? "read_dict_del_send_csv" : "read_dict_del_send_csv_ephemeral",
+                {
+                    "{{__CSV_NAME__}}" : `${utils.getGuildName(trigger)}_dictionary.csv`,
+                    "{{__CSV_BASE64__}}" : Buffer.from(dict_csv, "utf-8").toString("base64"),
+                    "{{__REQUEST_USER_NAME__}}" : utils.getUserName(trigger),
+                    "{{__REQUEST_USER_ICON__}}" : utils.getUserObj(trigger).avatarURL()
+                }
+            ));
             return;
         }
 
-        //VOICEVOXの辞書削除
-        if(server_info.read_app === "VOICEVOX"){
-
+        const vv_chain = map.get(`vv_chain_${guild_id}`) ?? Promise.resolve();
+        const vv_chain_next = vv_chain.then(async () => {
             //辞書の置き換え
-            if(map.get("voicevox_dictionary") != trigger.guild.id){
-                await voicevox.postImportUserDict(server_info.vv_dict);
-                map.set("voicevox_dictionary", trigger.guild.id);
+            if(map.get("vv_dictionary_id") !== guild_id){
+                await vv.postImportUserDict(dictionary);
+                map.set("vv_dictionary_id", guild_id);
             }
             
             //単語の削除
-            const uuids = Object.keys(server_info.vv_dict);
-            for(let i=0; i<uuids.length; i++){
-                if(server_info.vv_dict[uuids[i]].surface === word){
-                    await voicevox.deleteUserDictWord(uuids[i]);
-                    break;
-                }
-            }
+            await vv.deleteUserDictWord(uuid_exist);
 
             //更新された辞書の取得
-            server_info.vv_dict = (await voicevox.getUserDict()).data;
-
-            //辞書の整合性の確認
-            const read_dict_set = new Set(server_info.read_dict.map(entry => entry.word));
-            for(const entry of Object.values(server_info.vv_dict)){
-                if(!read_dict_set.has(entry.surface)){
-                    await helper.sendGUI(trigger, gui.create(map, helper.isInteraction(trigger) ? "read_dict_del_interrupt_error" : "read_dict_del_interrupt_error*", {"{{__REQUEST_USER_NAME__}}":helper.getUserName(trigger), "{{__REQUEST_USER_ICON__}}":helper.getUserObj(trigger).avatarURL()}));
-                    return;
-                }
-            }
-        }
-
-        //単語の削除
-        server_info.read_dict.splice(word_index, 1);
+            guild_info.vv_dict = (await vv.getUserDict()).data;
+        });
+        map.set(`vv_chain_${guild_id}`, vv_chain_next.catch(() => {}));
+        await vv_chain_next.catch((e) => {throw new Error(`read.js => dictDel() => vv_chain.then() \n ${e}`)});
 
         //サーバー情報の保存
-        await db.setServerInfo(trigger.guild.id, server_info);
+        await db.setGuildInfo(guild_id, guild_info);
 
         //辞書削除の通知
-        if(helper.isInteraction(trigger)){
-            await helper.sendGUI(trigger, gui.create(map, "read"));
-        }
-        await helper.sendGUI(trigger.channel, gui.create(map, "read_dict_del", {"{{__WORD__}}":word, "{{__REQUEST_USER_NAME__}}":helper.getUserName(trigger), "{{__REQUEST_USER_ICON__}}":helper.getUserObj(trigger).avatarURL()}));
+        if(utils.isInteraction(trigger)) await utils.sendGUI(trigger, gui.create(map, "read"));
+        await utils.sendGUI(trigger.channel, gui.create(map, "read_dict_del",
+            {
+                "{{__WORD__}}" : surface,
+                "{{__REQUEST_USER_NAME__}}" : utils.getUserName(trigger),
+                "{{__REQUEST_USER_ICON__}}" : utils.getUserObj(trigger).avatarURL()
+            }
+        ));
 
         return;
     }catch(e){
@@ -311,83 +421,88 @@ async function dictDel(trigger, map){
 //ユーザー設定
 async function setUser(interaction, map){
     try{
-        const user_info = await db.getUserInfo(interaction.user.id);
-        const server_info = await db.getServerInfo(interaction.guild.id);
+        //情報の取得
+        const user_id = utils.getUserId(interaction);
+        const guild_id = utils.getGuildId(interaction);
+        const user_info = await db.getUserInfo(user_id);
+        const guild_info = await db.getGuildInfo(guild_id);
+        const vv_speakers = map.get("voicevox_speakers");
 
-        const input_speaker = helper.getArgValue(interaction, "speaker");
-        const input_style = helper.getArgValue(interaction, "style");
-        const input_pitch = helper.getArgValue(interaction, "pitch");
-        const input_intonation = helper.getArgValue(interaction, "intonation");
-        const input_username = helper.getArgValue(interaction, "username");
-
-        let speaker = input_speaker ?? interaction.customId?.split("speaker@")[1] ?? null;
-        let style = input_style ?? interaction.customId?.split("style@")[1] ?? null;
-        let pitch = input_pitch ? parseFloat(input_pitch) : NaN;
-        let intonation = input_intonation ? parseFloat(input_intonation) : NaN;
-        let username = input_username ? input_username.trim() : null;
-        let credit = null;
-
-        //VOICEVOXの設定
-        if(server_info.read_app === "VOICEVOX"){
-            const vv_speakers = map.get("voicevox_speakers");
-            const vv_speaker = speaker ?? user_info.vv_uuid ?? server_info.vv_uuid;
-            const vv_style = style ?? user_info.vv_id ?? server_info.vv_id;
-            let vv_speaker_info = null;
-            let vv_style_info = null;
-
-            //スピーカー設定
-            if(vv_speaker === "ランダム"){
-                const rand = Math.floor(Math.random()*vv_speakers.length);
-                vv_speaker_info = vv_speakers[rand];
-                user_info.vv_uuid = vv_speaker_info.speaker_uuid;
-                speaker = vv_speaker_info.name;
-            }else{
-                vv_speaker_info = vv_speakers.find(speaker => speaker.name===vv_speaker || speaker.speaker_uuid===vv_speaker);
-                user_info.vv_uuid = vv_speaker_info?.speaker_uuid ?? user_info.vv_uuid;
-                speaker = vv_speaker_info?.name ?? null;
+        let read_text_property = null;
+        let vv_property = null;
+        for(const element of map.get("read_property_json")){
+            if(element.id === "read_text"){
+                read_text_property = element;
+                break;
             }
-
-            //存在しないスピーカー
-            if(input_speaker && !speaker){
-                await helper.sendGUI(interaction, gui.create(map, "read_set_user_failure", {"{{__CHARACTER__}}":input_speaker}));
-                return;
-            }
-
-            //スタイル設定
-            if(vv_speaker === "ランダム" || vv_style === "ランダム"){
-                const rand = Math.floor(Math.random()*vv_speaker_info.styles.length);
-                vv_style_info = vv_speaker_info.styles[rand];
-                user_info.vv_id = vv_style_info.id;
-                style = vv_style_info.name;
-            }else{
-                vv_style_info = vv_speaker_info.styles.find(style => style.name===vv_style || style.id===parseInt(vv_style));            
-                user_info.vv_id = vv_style_info?.id ?? (!input_style ? vv_speaker_info.styles[0].id : user_info.vv_id);
-                style = vv_style_info?.name ?? (!input_style ? vv_speaker_info.styles[0].name : null);
-            }
-
-            //存在しないスタイル
-            if(input_style && !style){
-                await helper.sendGUI(interaction, gui.create(map, "read_set_user_failure", {"{{__CHARACTER__}}":`${input_speaker}(${input_style})`}));
-                return;
-            }
-
-            //その他パラメータ設定
-            user_info.vv_pitch = !Number.isNaN(pitch) ? Math.min(Math.max(pitch, -0.15), 0.15) : user_info.vv_pitch ?? server_info.vv_pitch;
-            user_info.vv_intonation = !Number.isNaN(intonation) ? Math.min(Math.max(intonation, 0.00), 2.00) : user_info.vv_intonation ?? server_info.vv_intonation;
-            pitch = user_info.vv_pitch;
-            intonation = user_info.vv_intonation;
-            credit = `VOICEVOX:${speaker}`;
         }
-        
+        for(const element of map.get("read_property_json")){
+            if(element.id === "VOICEVOX"){
+                vv_property = element;
+                break;
+            }
+        }
+        if(!read_text_property) throw new Error(`read.js => setUser() \n not define property id : read_text`);
+        if(!vv_property) throw new Error(`read.js => setUser() \n not define property id : VOICEVOX`);
+
+        const input_speaker = utils.getArgValue(interaction, "speaker");
+        const input_style = utils.getArgValue(interaction, "style");
+        const input_pitch = utils.getArgValue(interaction, "pitch");
+        const input_intonation = utils.getArgValue(interaction, "intonation");
+        const input_username = utils.getArgValue(interaction, "username");
+        const input_honorific = utils.getArgValue(interaction, "honorific");
+
+        //ユーザー設定要件の確認
+        const set_user_error = async () => {
+            await utils.sendGUI(interaction, gui.create(map, "read_set_user_error_ephemeral",
+                {
+                    "{{__CHARACTER__}}" : `${input_speaker}(${input_style})`
+                }
+            ));
+        }
+
+        //スピーカー入力確認
+        let vv_speaker_info = null;
+        let vv_uuid = interaction.customId?.split("speaker@")[1] ?? user_info.vv_uuid ?? guild_info.vv_uuid ?? vv_property.uuid;
+        if(input_speaker && input_speaker === "ランダム") vv_speaker_info = vv_speakers[Math.floor(Math.random()*vv_speakers.length)];
+        if(input_speaker && input_speaker !== "ランダム") vv_speaker_info = vv_speakers.find(vv_speaker => vv_speaker.name===input_speaker);
+        if(input_speaker && !vv_speaker_info) return await set_user_error();
+        if(!vv_speaker_info) vv_speaker_info = vv_speakers.find(vv_speaker => vv_speaker.speaker_uuid===vv_uuid);
+        if(!vv_speaker_info) return await set_user_error();
+        user_info.vv_uuid = vv_speaker_info.speaker_uuid;
+
+        //スタイル入力確認
+        let vv_style_info = null;
+        let vv_id = interaction.customId?.split("style@")[1] ?? user_info.vv_id ?? guild_info.vv_id ?? vv_property.id;
+        if(input_style && (input_speaker === "ランダム" || input_style === "ランダム")) vv_style_info = vv_speaker_info.styles[Math.floor(Math.random()*vv_speaker_info.styles.length)];
+        if(input_style && input_speaker !== "ランダム" && input_style !== "ランダム") vv_style_info = vv_speaker_info.styles.find(vv_style => vv_style.name===input_style);
+        if(input_style && !vv_style_info) return await set_user_error();
+        if(!vv_style_info) vv_style_info = vv_speaker_info.styles.find(vv_style => vv_style.id===parseInt(vv_id));
+        if(!vv_style_info) vv_style_info = vv_speaker_info.styles[0];
+        user_info.vv_id = vv_style_info.id;
+
         //その他パラメータ設定
-        user_info.username = (username && username!="") ? username : (user_info.username ?? interaction.user.displayName);
-        username = user_info.username;
+        const vv_pitch = parseFloat(input_pitch);
+        const vv_intonation = parseFloat(input_intonation);
+        user_info.vv_pitch = !Number.isNaN(vv_pitch) ? Math.min(Math.max(vv_pitch, vv_property.pitch_min), vv_property.pitch_max) : user_info.vv_pitch ?? guild_info.vv_pitch ?? vv_property.pitch;
+        user_info.vv_intonation = !Number.isNaN(vv_intonation) ? Math.min(Math.max(vv_intonation, vv_property.intonation_min), vv_property.intonation_max) : user_info.vv_intonation ?? guild_info.vv_intonation ?? vv_property.intonation;
+        user_info.username = (input_username && input_username.trim()!="") ? input_username.trim() : (user_info.username ?? utils.getUserName(interaction));
+        user_info.honorific = (input_honorific && input_honorific.trim()!="") ? input_honorific.trim() : (user_info.honorific ?? read_text_property.honorific);
 
         //設定の保存
-        await db.setUserInfo(interaction.user.id, user_info);
+        await db.setUserInfo(user_id, user_info);
 
         //ユーザー設定の通知
-        await helper.sendGUI(interaction, gui.create(map, "read_set_user", {"{{__SPEAKER__}}":speaker, "{{__STYLE__}}":style, "{{__USERNAME__}}":username, "{{__PITCH__}}":pitch, "{{__INTONATION__}}":intonation, "{{__CREDIT__}}":credit}));
+        await utils.sendGUI(interaction, gui.create(map, "read_set_user",
+            {
+                "{{__SPEAKER__}}" : vv_speaker_info.name,
+                "{{__STYLE__}}" : vv_style_info.name,
+                "{{__USERNAME__}}" : user_info.username,
+                "{{__PITCH__}}" : user_info.vv_pitch,
+                "{{__INTONATION__}}" : user_info.vv_intonation,
+                "{{__CREDIT__}}": `VOICEVOX:${vv_speaker_info.name}`
+            }
+        ));
         
         return;
     }catch(e){
@@ -398,85 +513,106 @@ async function setUser(interaction, map){
 //ユーザー設定＠スピーカー
 async function setUserSpeaker(interaction, map){
     try{
-        const user_info = await db.getUserInfo(interaction.user.id);
-        const server_info = await db.getServerInfo(interaction.guild.id);
+        //情報の取得
+        const user_id = utils.getUserId(interaction);
+        const guild_id = utils.getGuildId(interaction);
+        const user_info = await db.getUserInfo(user_id);
+        const guild_info = await db.getGuildInfo(guild_id);
+        const vv_speakers = map.get("voicevox_speakers");
+        const discord_menu_max = 25;
 
-        //VOICEVOXのスピーカー設定
-        if(server_info.read_app === "VOICEVOX"){
-            const vv_speakers = map.get("voicevox_speakers");
-
-            //現在のスピーカー
-            const vv_speaker_uuid = interaction.values[0].split("speaker@")[1] ?? user_info.vv_uuid ?? server_info.vv_uuid;
-            const vv_speaker_idx = vv_speakers.findIndex(speaker => speaker.speaker_uuid===vv_speaker_uuid);
-            const vv_speaker_name = vv_speakers[vv_speaker_idx].name;
-            const vv_style_name = vv_speakers[vv_speaker_idx].styles[0].name;
-
-            //ページ
-            const max_page = Math.ceil(vv_speakers.length/(MENU_MAX-2));
-            const now_page = Math.ceil((vv_speaker_idx+1)/(MENU_MAX-2));
-            const pre_page = now_page>1 ? now_page-1 : max_page;
-            const next_page = now_page<max_page ? now_page+1 : 1;
-            
-            //ページの先頭スピーカー
-            const pre_vv_speaker_idx = (pre_page-1)*(MENU_MAX-2);
-            const next_vv_speaker_idx = (next_page-1)*(MENU_MAX-2);
-            const pre_vv_speaker_uuid = vv_speakers.at(pre_vv_speaker_idx).speaker_uuid
-            const next_vv_speaker_uuid = vv_speakers.at(next_vv_speaker_idx).speaker_uuid
-
-            //情報の取得
-            let vv_speaker_info = null;
-            let vv_style_info = null;
-            vv_speaker_info = (await voicevox.getSpeakerInfo(vv_speaker_uuid)).data;
-            vv_style_info = vv_speaker_info.style_infos[0];
-
-            //メニューの更新
-            const tmp_map = new Map([["gui_json", [JSON.parse(JSON.stringify(map.get("gui_json").find(gui => gui.id==="read_set_user_speaker")))]]]);
-            if(pre_page < now_page){
-                tmp_map.get("gui_json")[0].menus[0].options.push(
-                    {
-                        "label" : "前のページへ",
-                        "value" : `read_set_user_speaker@${pre_vv_speaker_uuid}`,
-                        "description" : `${pre_page}/${max_page}`,
-                        "emoji" : "🔼"
-                    }
-                );
+        let vv_property = null;
+        for(const element of map.get("read_property_json")){
+            if(element.id === "VOICEVOX"){
+                vv_property = element;
+                break;
             }
-            for(let i=((now_page-1)*(MENU_MAX-2)); i<vv_speakers.length && i<((now_page-1)*(MENU_MAX-2)+(MENU_MAX-2)); i++){
-                if(i === vv_speaker_idx){
-                    tmp_map.get("gui_json")[0].menus[0].options.push(
-                        {
-                            "label" : `${vv_speaker_name}(${vv_style_name})`,
-                            "value" : `read_set_user`,
-                            "description" : "決定する",
-                            "emoji" : "✅"
-                        },
-                    )
-                }else{
-                    tmp_map.get("gui_json")[0].menus[0].options.push(
-                        {
-                            "label" : vv_speakers[i].name,
-                            "value" : `read_set_user_speaker@${vv_speakers[i].speaker_uuid}`,
-                            "description" : vv_speakers[i].styles[0].name,
-                            "emoji" : "🔘"
-                        }
-                    )
-                }
-            }
-            if(next_page > now_page){
-                tmp_map.get("gui_json")[0].menus[0].options.push(
-                    {
-                        "label" : "次のページへ",
-                        "value" : `read_set_user_speaker@${next_vv_speaker_uuid}`,
-                        "description" : `${next_page}/${max_page}`,
-                        "emoji" : "🔽"
-                    }
-                );
-            }
-
-            //スピーカーページの送信
-            await helper.sendGUI(interaction, gui.create(tmp_map, "read_set_user_speaker", {"{{__SPEAKER_NAME__}}":vv_speaker_name, "{{__STYLE_NAME__}}":vv_style_name, "{{__POLICY_URL__}}":vv_speaker_info.policy.match(/(https?:\/\/[\w\-\.\/\?\,\#\:\u3000-\u30FE\u4E00-\u9FA0\uFF01-\uFFE3]+)/)[0], "{{__ICON_NAME__}}":`icon.jpg`, "{{__ICON_BASE64__}}":vv_style_info.icon, "{{__VOICE_SAMPLE_NAME__}}":`${vv_speaker_name}(${vv_style_name})のサンプル音声.mp3`, "{{__VOICE_SAMPLE_BASE64__}}":vv_style_info.voice_samples[0], "{{__SPEAKER_UUID__}}":vv_speaker_uuid}));
-            tmp_map.clear();
         }
+        if(!vv_property) throw new Error(`read.js => setUserSpeaker() \n not define property id : VOICEVOX`);
+
+        //現在のスピーカー
+        const vv_speaker_uuid = interaction?.values?.[0]?.split("speaker@")[1] ?? user_info.vv_uuid ?? guild_info.vv_uuid ?? vv_property.uuid;
+        const vv_speaker_idx = vv_speakers.findIndex(speaker => speaker.speaker_uuid===vv_speaker_uuid);
+        const vv_speaker_name = vv_speakers[vv_speaker_idx].name;
+        const vv_style_name = vv_speakers[vv_speaker_idx].styles[0].name;
+
+        //ページ
+        const max_page = Math.ceil(vv_speakers.length/(discord_menu_max-2));
+        const now_page = Math.ceil((vv_speaker_idx+1)/(discord_menu_max-2));
+        const pre_page = now_page>1 ? now_page-1 : max_page;
+        const next_page = now_page<max_page ? now_page+1 : 1;
+
+        //ページの先頭スピーカー
+        const pre_vv_speaker_idx = (pre_page-1)*(discord_menu_max-2);
+        const next_vv_speaker_idx = (next_page-1)*(discord_menu_max-2);
+        const pre_vv_speaker_uuid = vv_speakers.at(pre_vv_speaker_idx).speaker_uuid
+        const next_vv_speaker_uuid = vv_speakers.at(next_vv_speaker_idx).speaker_uuid
+
+        //情報の取得
+        let vv_speaker_info = null;
+        let vv_style_info = null;
+        vv_speaker_info = (await vv.getSpeakerInfo(vv_speaker_uuid)).data;
+        vv_style_info = vv_speaker_info.style_infos[0];
+
+        //メニューの更新
+        const tmp_map = new Map([["gui_json", [JSON.parse(JSON.stringify(map.get("gui_json").find(gui => gui.id==="read_set_user_speaker")))]]]);
+        if(pre_page < now_page){
+            tmp_map.get("gui_json")[0].menus[0].options.push(
+                {
+                    "label" : "前のページへ",
+                    "value" : `read_set_user_speaker@${pre_vv_speaker_uuid}`,
+                    "description" : `${pre_page}/${max_page}`,
+                    "emoji" : "🔼"
+                }
+            );
+        }
+        for(let i=((now_page-1)*(discord_menu_max-2)); i<vv_speakers.length && i<((now_page-1)*(discord_menu_max-2)+(discord_menu_max-2)); i++){
+            if(i === vv_speaker_idx){
+                tmp_map.get("gui_json")[0].menus[0].options.push(
+                    {
+                        "label" : `${vv_speaker_name}(${vv_style_name})`,
+                        "value" : `read_set_user`,
+                        "description" : "決定する",
+                        "emoji" : "✅"
+                    },
+                )
+            }
+            if(i !== vv_speaker_idx){
+                tmp_map.get("gui_json")[0].menus[0].options.push(
+                    {
+                        "label" : vv_speakers[i].name,
+                        "value" : `read_set_user_speaker@${vv_speakers[i].speaker_uuid}`,
+                        "description" : vv_speakers[i].styles[0].name,
+                        "emoji" : "🔘"
+                    }
+                )
+            }
+        }
+        if(next_page > now_page){
+            tmp_map.get("gui_json")[0].menus[0].options.push(
+                {
+                    "label" : "次のページへ",
+                    "value" : `read_set_user_speaker@${next_vv_speaker_uuid}`,
+                    "description" : `${next_page}/${max_page}`,
+                    "emoji" : "🔽"
+                }
+            );
+        }
+
+        //スピーカーページの送信
+        await utils.sendGUI(interaction, gui.create(tmp_map, "read_set_user_speaker",
+            {
+                "{{__SPEAKER_NAME__}}" : vv_speaker_name,
+                "{{__STYLE_NAME__}}" : vv_style_name,
+                "{{__POLICY_URL__}}" : vv_speaker_info.policy.match(/(https?:\/\/[\w\-\.\/\?\,\#\:\u3000-\u30FE\u4E00-\u9FA0\uFF01-\uFFE3]+)/)[0],
+                "{{__ICON_NAME__}}" : `icon.jpg`,
+                "{{__ICON_BASE64__}}" : vv_style_info.icon,
+                "{{__VOICE_SAMPLE_NAME__}}" : `${vv_speaker_name}(${vv_style_name})のサンプル音声.mp3`,
+                "{{__VOICE_SAMPLE_BASE64__}}" : vv_style_info.voice_samples[0],
+                "{{__SPEAKER_UUID__}}" : vv_speaker_uuid
+            }
+        ));
+        tmp_map.clear();
         
         return;
     }catch(e){
@@ -487,88 +623,109 @@ async function setUserSpeaker(interaction, map){
 //ユーザー設定＠スタイル
 async function setUserStyle(interaction, map){
     try{
-        const user_info = await db.getUserInfo(interaction.user.id);
-        const server_info = await db.getServerInfo(interaction.guild.id);
+        //情報の取得
+        const user_id = utils.getUserId(interaction);
+        const guild_id = utils.getGuildId(interaction);
+        const user_info = await db.getUserInfo(user_id);
+        const guild_info = await db.getGuildInfo(guild_id);
+        const vv_speakers = map.get("voicevox_speakers");
+        const discord_menu_max = 25;
 
-        //VOICEVOXのスタイル設定
-        if(server_info.read_app === "VOICEVOX"){
-            const vv_speakers = map.get("voicevox_speakers");
-
-            //現在のスピーカー
-            const vv_speaker_uuid = user_info.vv_uuid ?? server_info.vv_uuid;
-            const vv_speaker_idx = vv_speakers.findIndex(speaker => speaker.speaker_uuid===vv_speaker_uuid);
-            const vv_speaker_name = vv_speakers[vv_speaker_idx].name;
-            const vv_styles = vv_speakers[vv_speaker_idx].styles;
-            const vv_style_id = interaction.values[0].split("style@")[1] ?? vv_styles[0].id;
-            const vv_style_idx = vv_styles.findIndex(style => style.id===parseInt(vv_style_id));
-            const vv_style_name = vv_styles[vv_style_idx].name;
-
-            //ページ
-            const max_page = Math.ceil(vv_styles.length/(MENU_MAX-2));
-            const now_page = Math.ceil((vv_style_idx+1)/(MENU_MAX-2));
-            const pre_page = now_page>1 ? now_page-1 : max_page;
-            const next_page = now_page<max_page ? now_page+1 : 1;
-            
-            //ページの先頭スタイル
-            const pre_vv_style_idx = (pre_page-1)*(MENU_MAX-2);
-            const next_vv_style_idx = (next_page-1)*(MENU_MAX-2);
-            const pre_vv_style_id = vv_styles.at(pre_vv_style_idx).id
-            const next_vv_style_id = vv_styles.at(next_vv_style_idx).id
-
-            //情報の取得
-            let vv_speaker_info = null;
-            let vv_style_info = null;
-            vv_speaker_info = (await voicevox.getSpeakerInfo(vv_speaker_uuid)).data;
-            vv_style_info = vv_speaker_info.style_infos.find(info => info.id === parseInt(vv_style_id));
-
-            //メニューの更新
-            const tmp_map = new Map([["gui_json", [JSON.parse(JSON.stringify(map.get("gui_json").find(gui => gui.id==="read_set_user_style")))]]]);
-            if(pre_page < now_page){
-                tmp_map.get("gui_json")[0].menus[0].options.push(
-                    {
-                        "label" : "前のページへ",
-                        "value" : `read_set_user_style@${pre_vv_style_id}`,
-                        "description" : `${pre_page}/${max_page}`,
-                        "emoji" : "🔼"
-                    }
-                );
+        let vv_property = null;
+        for(const element of map.get("read_property_json")){
+            if(element.id === "VOICEVOX"){
+                vv_property = element;
+                break;
             }
-            for(let i=((now_page-1)*(MENU_MAX-2)); i<vv_styles.length && i<((now_page-1)*(MENU_MAX-2)+(MENU_MAX-2)); i++){
-                if(i === vv_style_idx){
-                    tmp_map.get("gui_json")[0].menus[0].options.push(
-                        {
-                            "label" : `${vv_speaker_name}(${vv_style_name})`,
-                            "value" : `read_set_user`,
-                            "description" : "決定する",
-                            "emoji" : "✅"
-                        },
-                    )
-                }else{
-                    tmp_map.get("gui_json")[0].menus[0].options.push(
-                        {
-                            "label" : vv_styles[i].name,
-                            "value" : `read_set_user_style@${vv_styles[i].id}`,
-                            "description" : vv_speaker_name,
-                            "emoji" : "🔘"
-                        }
-                    )
-                }
-            }
-            if(next_page > now_page){
-                tmp_map.get("gui_json")[0].menus[0].options.push(
-                    {
-                        "label" : "次のページへ",
-                        "value" : `read_set_user_style@${next_vv_style_id}`,
-                        "description" : `${next_page}/${max_page}`,
-                        "emoji" : "🔽"
-                    }
-                );
-            }
-
-            //スタイルページの送信
-            await helper.sendGUI(interaction, gui.create(tmp_map, "read_set_user_style", {"{{__SPEAKER_NAME__}}":vv_speaker_name, "{{__STYLE_NAME__}}":vv_style_name, "{{__POLICY_URL__}}":vv_speaker_info.policy.match(/(https?:\/\/[\w\-\.\/\?\,\#\:\u3000-\u30FE\u4E00-\u9FA0\uFF01-\uFFE3]+)/)[0], "{{__ICON_NAME__}}":`icon.jpg`, "{{__ICON_BASE64__}}":vv_style_info.icon, "{{__VOICE_SAMPLE_NAME__}}":`${vv_speaker_name}(${vv_style_name})のサンプル音声.mp3`, "{{__VOICE_SAMPLE_BASE64__}}":vv_style_info.voice_samples[0], "{{__STYLE_ID__}}":vv_style_id}));
-            tmp_map.clear();
         }
+        if(!vv_property) throw new Error(`read.js => setUserStyle() \n not define property id : VOICEVOX`);
+
+        //現在のスピーカー
+        const vv_speaker_uuid = user_info.vv_uuid ?? guild_info.vv_uuid ?? vv_property.uuid;
+        const vv_speaker_idx = vv_speakers.findIndex(speaker => speaker.speaker_uuid===vv_speaker_uuid);
+        const vv_speaker_name = vv_speakers[vv_speaker_idx].name;
+        const vv_styles = vv_speakers[vv_speaker_idx].styles;
+        const vv_style_id = interaction?.values?.[0].split("style@")[1] ?? user_info.vv_id ?? guild_info.vv_id ?? vv_styles[0].id;
+        const vv_style_idx = vv_styles.findIndex(style => (style.id===parseInt(vv_style_id)));
+        const vv_style_name = vv_styles[vv_style_idx].name;
+
+        //ページ
+        const max_page = Math.ceil(vv_styles.length/(discord_menu_max-2));
+        const now_page = Math.ceil((vv_style_idx+1)/(discord_menu_max-2));
+        const pre_page = now_page>1 ? now_page-1 : max_page;
+        const next_page = now_page<max_page ? now_page+1 : 1;
+            
+        //ページの先頭スタイル
+        const pre_vv_style_idx = (pre_page-1)*(discord_menu_max-2);
+        const next_vv_style_idx = (next_page-1)*(discord_menu_max-2);
+        const pre_vv_style_id = vv_styles.at(pre_vv_style_idx).id
+        const next_vv_style_id = vv_styles.at(next_vv_style_idx).id
+
+        //情報の取得
+        let vv_speaker_info = null;
+        let vv_style_info = null;
+        vv_speaker_info = (await vv.getSpeakerInfo(vv_speaker_uuid)).data;
+        vv_style_info = vv_speaker_info.style_infos.find(info => info.id === parseInt(vv_style_id));
+
+        //メニューの更新
+        const tmp_map = new Map([["gui_json", [JSON.parse(JSON.stringify(map.get("gui_json").find(gui => gui.id==="read_set_user_style")))]]]);
+        if(pre_page < now_page){
+            tmp_map.get("gui_json")[0].menus[0].options.push(
+                {
+                    "label" : "前のページへ",
+                    "value" : `read_set_user_style@${pre_vv_style_id}`,
+                    "description" : `${pre_page}/${max_page}`,
+                    "emoji" : "🔼"
+                }
+            );
+        }
+        for(let i=((now_page-1)*(discord_menu_max-2)); i<vv_styles.length && i<((now_page-1)*(discord_menu_max-2)+(discord_menu_max-2)); i++){
+            if(i === vv_style_idx){
+                tmp_map.get("gui_json")[0].menus[0].options.push(
+                    {
+                        "label" : `${vv_speaker_name}(${vv_style_name})`,
+                        "value" : `read_set_user`,
+                        "description" : "決定する",
+                        "emoji" : "✅"
+                    },
+                )
+            }
+            if(i !== vv_style_idx){
+                tmp_map.get("gui_json")[0].menus[0].options.push(
+                    {
+                        "label" : vv_styles[i].name,
+                        "value" : `read_set_user_style@${vv_styles[i].id}`,
+                        "description" : vv_speaker_name,
+                        "emoji" : "🔘"
+                    }
+                );
+            }
+        }
+        if(next_page > now_page){
+            tmp_map.get("gui_json")[0].menus[0].options.push(
+                {
+                    "label" : "次のページへ",
+                    "value" : `read_set_user_style@${next_vv_style_id}`,
+                    "description" : `${next_page}/${max_page}`,
+                    "emoji" : "🔽"
+                }
+            );
+        }
+
+        //スタイルページの送信
+        await utils.sendGUI(interaction, gui.create(tmp_map, "read_set_user_style",
+            {
+                "{{__SPEAKER_NAME__}}" : vv_speaker_name,
+                "{{__STYLE_NAME__}}" : vv_style_name,
+                "{{__POLICY_URL__}}" : vv_speaker_info.policy.match(/(https?:\/\/[\w\-\.\/\?\,\#\:\u3000-\u30FE\u4E00-\u9FA0\uFF01-\uFFE3]+)/)[0],
+                "{{__ICON_NAME__}}" : `icon.jpg`,
+                "{{__ICON_BASE64__}}" : vv_style_info.icon,
+                "{{__VOICE_SAMPLE_NAME__}}" : `${vv_speaker_name}(${vv_style_name})のサンプル音声.mp3`,
+                "{{__VOICE_SAMPLE_BASE64__}}" : vv_style_info.voice_samples[0],
+                "{{__STYLE_ID__}}" : vv_style_id
+            }
+        ));
+        tmp_map.clear();
         
         return;
     }catch(e){
@@ -576,292 +733,319 @@ async function setUserStyle(interaction, map){
     }
 }
 
-//サーバー設定
-async function setServer(interaction, map){
+//ギルド設定
+async function setGuild(interaction, map){
     try{
-        const server_info = await db.getServerInfo(interaction.guild.id);
-        
-        const input_read_username = helper.getArgValue(interaction, "read_username");
-        const input_read_username_always = helper.getArgValue(interaction, "read_username_always");
-        const input_read_set_override = helper.getArgValue(interaction, "read_set_override");
-        const input_read_max = helper.getArgValue(interaction, "read_max");
-        const input_read_app = helper.getArgValue(interaction, "read_app");
+        const guild_id = utils.getGuildId(interaction);
+        const guild_info = await db.getGuildInfo(guild_id);
+        const vv_speakers = map.get("voicevox_speakers");
 
-        const input_speaker = helper.getArgValue(interaction, "speaker");
-        const input_style = helper.getArgValue(interaction, "style");
-        const input_speed = helper.getArgValue(interaction, "speed");
-        const input_pitch = helper.getArgValue(interaction, "pitch");
-        const input_intonation = helper.getArgValue(interaction, "intonation");
-        const input_volume = helper.getArgValue(interaction, "volume");
-
-        const regex = new RegExp(/(t|T|y|Y)/);
-        let read_username = regex.test(input_read_username);
-        let read_username_always = regex.test(input_read_username_always);
-        let read_set_override = regex.test(input_read_set_override);
-        let read_max = input_read_max ? parseInt(input_read_max) : NaN;
-        let read_app = input_read_app?.match(/VOICEVOX/) ?? null;
-
-        let speaker = input_speaker ?? interaction.customId?.split("speaker@")[1] ?? null;
-        let style = input_style ?? interaction.customId?.split("style@")[1] ?? null;
-        let speed = input_speed ? parseFloat(input_speed) : NaN;
-        let pitch = input_pitch ? parseFloat(input_pitch) : NaN;
-        let intonation = input_intonation ? parseFloat(input_intonation) : NaN;
-        let volume = input_volume ? parseFloat(input_volume) : NaN;
-        let credit = null;
-
-        //VOICEVOXの設定
-        if(server_info.read_app === "VOICEVOX"){
-            const vv_speakers = map.get("voicevox_speakers");
-            const vv_speaker = speaker ?? server_info.vv_uuid;
-            const vv_style = style ?? server_info.vv_id;
-            let vv_speaker_info = null;
-            let vv_style_info = null;
-
-            //スピーカー設定
-            if(vv_speaker === "ランダム"){
-                const rand = Math.floor(Math.random()*vv_speakers.length);
-                vv_speaker_info = vv_speakers[rand];
-                server_info.vv_uuid = vv_speaker_info.speaker_uuid;
-                speaker = vv_speaker_info.name;
-            }else{
-                vv_speaker_info = vv_speakers.find(speaker => speaker.name===vv_speaker || speaker.speaker_uuid===vv_speaker);
-                server_info.vv_uuid = vv_speaker_info?.speaker_uuid ?? server_info.vv_uuid;
-                speaker = vv_speaker_info?.name ?? null;
+        let read_text_property = null;
+        let vv_property = null;
+        for(const element of map.get("read_property_json")){
+            if(element.id === "read_text"){
+                read_text_property = element;
+                break;
             }
-
-            //存在しないスピーカー
-            if(input_speaker && !speaker){
-                await helper.sendGUI(interaction, gui.create(map, "read_set_server_failure", {"{{__SPEAKER__}}":input_speaker}));
-                return;
+        }
+        for(const element of map.get("read_property_json")){
+            if(element.id === "VOICEVOX"){
+                vv_property = element;
+                break;
             }
+        }
+        if(!read_text_property) throw new Error(`read.js => setGuild() \n not define property id : read_text`);
+        if(!vv_property) throw new Error(`read.js => setGuild() \n not define property id : VOICEVOX`);
 
-            //スタイル設定
-            if(vv_speaker === "ランダム" || vv_style === "ランダム"){
-                const rand = Math.floor(Math.random()*vv_speaker_info.styles.length);
-                vv_style_info = vv_speaker_info.styles[rand];
-                server_info.vv_id = vv_style_info.id;
-                style = vv_style_info.name;
-            }else{
-                vv_style_info = vv_speaker_info.styles.find(style => style.name===vv_style || style.id===parseInt(vv_style));            
-                server_info.vv_id = vv_style_info?.id ?? (!input_style ? vv_speaker_info.styles[0].id : server_info.vv_id);
-                style = vv_style_info?.name ?? (!input_style ? vv_speaker_info.styles[0].name : null);
-            }
+        const input_speaker = utils.getArgValue(interaction, "speaker");
+        const input_style = utils.getArgValue(interaction, "style");
+        const input_speed = utils.getArgValue(interaction, "speed");
+        const input_pitch = utils.getArgValue(interaction, "pitch");
+        const input_intonation = utils.getArgValue(interaction, "intonation");
+        const input_volume = utils.getArgValue(interaction, "volume");
+        const input_override = utils.getArgValue(interaction, "override");
 
-            //存在しないスタイル
-            if(input_style && !style){
-                await helper.sendGUI(interaction, gui.create(map, "read_set_server_failure", {"{{__STYLE__}}":input_style}));
-                return;
-            }
-
-            //その他パラメータ設定
-            server_info.vv_speed = !Number.isNaN(speed) ? Math.min(Math.max(speed, 0.50), 2.00) : server_info.vv_speed;
-            server_info.vv_pitch = !Number.isNaN(pitch) ? Math.min(Math.max(pitch, -0.15), 0.15) : server_info.vv_pitch;
-            server_info.vv_intonation = !Number.isNaN(intonation) ? Math.min(Math.max(intonation, 0.00), 2.00) : server_info.vv_intonation;
-            server_info.vv_volume = !Number.isNaN(volume) ? Math.min(Math.max(volume, 0.00), 2.00) : server_info.vv_volume;
-            speed = server_info.vv_speed;
-            pitch = server_info.vv_pitch;
-            intonation = server_info.vv_intonation;
-            volume = server_info.vv_volume;
-            credit = `VOICEVOX:${speaker}`;
+        //ギルド設定要件の確認
+        const set_guild_error = async () => {
+            await utils.sendGUI(interaction, gui.create(map, "read_set_guild_error",
+                {
+                    "{{__CHARACTER__}}" : `${input_speaker}(${input_style})`
+                }
+            ));
         }
 
+        //スピーカー入力確認
+        let vv_speaker_info = null;
+        let vv_uuid = interaction.customId?.split("speaker@")[1] ?? guild_info.vv_uuid ?? vv_property.uuid;
+        if(input_speaker && input_speaker === "ランダム") vv_speaker_info = vv_speakers[Math.floor(Math.random()*vv_speakers.length)];
+        if(input_speaker && input_speaker !== "ランダム") vv_speaker_info = vv_speakers.find(vv_speaker => vv_speaker.name===input_speaker);
+        if(input_speaker && !vv_speaker_info) return await set_guild_error();
+        if(!vv_speaker_info) vv_speaker_info = vv_speakers.find(vv_speaker => vv_speaker.speaker_uuid===vv_uuid);
+        if(!vv_speaker_info) return await set_guild_error();
+        guild_info.vv_uuid = vv_speaker_info.speaker_uuid;
+
+        //スタイル入力確認
+        let vv_style_info = null;
+        let vv_id = interaction.customId?.split("style@")[1] ?? guild_info.vv_id ?? vv_property.id;
+        if(input_style && (input_speaker === "ランダム" || input_style === "ランダム")) vv_style_info = vv_speaker_info.styles[Math.floor(Math.random()*vv_speaker_info.styles.length)];
+        if(input_style && input_speaker !== "ランダム" && input_style !== "ランダム") vv_style_info = vv_speaker_info.styles.find(vv_style => vv_style.name===input_style);
+        if(input_style && !vv_style_info) return await set_guild_error();
+        if(!vv_style_info) vv_style_info = vv_speaker_info.styles.find(vv_style => vv_style.id===parseInt(vv_id));
+        if(!vv_style_info) vv_style_info = vv_speaker_info.styles[0];
+        guild_info.vv_id = vv_style_info.id;
+
         //その他パラメータ設定
-        server_info.read_username = read_username ?? server_info.read_username;
-        server_info.read_username_always = read_username_always ?? server_info.read_username_always;
-        server_info.read_set_override = read_set_override ?? server_info.read_set_override;
-        server_info.read_max = !Number.isNaN(read_max) ? Math.min(Math.max(read_max, 10), 80) : server_info.read_max;
-        server_info.read_app = read_app ?? server_info.read_app;
-        read_username = server_info.read_username;
-        read_username_always = server_info.read_username_always;
-        read_set_override = server_info.read_set_override;
-        read_max = server_info.read_max;
-        read_app = server_info.read_app;
+        const vv_speed = parseFloat(input_speed);
+        const vv_pitch = parseFloat(input_pitch);
+        const vv_intonation = parseFloat(input_intonation);
+        const vv_volume = parseFloat(input_volume);
+        guild_info.vv_speed = !Number.isNaN(vv_speed) ? Math.min(Math.max(vv_speed, vv_property.speed_min), vv_property.speed_max) : guild_info.vv_speed ?? vv_property.speed;
+        guild_info.vv_pitch = !Number.isNaN(vv_pitch) ? Math.min(Math.max(vv_pitch, vv_property.pitch_min), vv_property.pitch_max) : guild_info.vv_pitch ?? vv_property.pitch;
+        guild_info.vv_intonation = !Number.isNaN(vv_intonation) ? Math.min(Math.max(vv_intonation, vv_property.intonation_min), vv_property.intonation_max) : guild_info.vv_intonation ?? vv_property.intonation;
+        guild_info.vv_volume = !Number.isNaN(vv_volume) ? Math.min(Math.max(vv_volume, vv_property.volume_min), vv_property.volume_max) : guild_info.vv_volume ?? vv_property.volume;
+        
+        const regex = new RegExp(/(t|T|y|Y)/);
+        guild_info.read_override = regex.test(input_override) ?? guild_info.read_override;
 
         //設定の保存
-        await db.setServerInfo(interaction.guild.id, server_info);
+        await db.setGuildInfo(guild_id, guild_info);
 
         //サーバー設定の通知
-        await helper.sendGUI(interaction, gui.create(map, "read_set_server_select"));
-        await helper.sendGUI(interaction.channel, gui.create(map, "read_set_server", {"{{__SPEAKER__}}":speaker, "{{__STYLE__}}":style, "{{__READ_USERNAME__}}":read_username, "{{__READ_USERNAME_ALWAYS__}}":read_username_always, "{{__READ_MAX__}}":read_max, "{{__READ_APP__}}":read_app, "{{__READ_SET_OVERRIDE__}}":read_set_override, "{{__SPEED__}}":speed, "{{__PITCH__}}":pitch, "{{__INTONATION__}}":intonation, "{{__VOLUME__}}":volume, "{{__CREDIT__}}":credit}));
+        await utils.sendGUI(interaction, gui.create(map, "read_set_guild_select"));
+        await utils.sendGUI(utils.getChannelObj(interaction), gui.create(map, "read_set_guild",
+            {
+                "{{__SPEAKER__}}" : vv_speaker_info.name,
+                "{{__STYLE__}}" : vv_style_info.name,
+                "{{__OVERRIDE__}}" : guild_info.read_override,
+                "{{__SPEED__}}" : guild_info.vv_speed,
+                "{{__PITCH__}}" : guild_info.vv_pitch,
+                "{{__INTONATION__}}" : guild_info.vv_intonation,
+                "{{__VOLUME__}}" : guild_info.vv_volume,
+                "{{__CREDIT__}}" : `VOICEVOX:${vv_speaker_info.name}`,
+                "{{__REQUEST_USER_NAME__}}" : utils.getUserName(interaction),
+                "{{__REQUEST_USER_ICON__}}" : utils.getUserObj(interaction).avatarURL()
+            }
+        ));
         
         return;
     }catch(e){
-        throw new Error(`read.js => setServer() \n ${e}`);
+        throw new Error(`read.js => setGuild() \n ${e}`);
     }
 }
 
 //サーバー設定＠スピーカー
-async function setServerSpeaker(interaction, map){
+async function setGuildSpeaker(interaction, map){
     try{
-        const server_info = await db.getServerInfo(interaction.guild.id);
+        //情報の取得
+        const guild_id = utils.getGuildId(interaction);
+        const guild_info = await db.getGuildInfo(guild_id);
+        const vv_speakers = map.get("voicevox_speakers");
+        const discord_menu_max = 25;
 
-        //VOICEVOXのスピーカー設定
-        if(server_info.read_app === "VOICEVOX"){
-            const vv_speakers = map.get("voicevox_speakers");
-
-            //現在のスピーカー
-            const vv_speaker_uuid = interaction.values[0].split("speaker@")[1] ?? server_info.vv_uuid;
-            const vv_speaker_idx = vv_speakers.findIndex(speaker => speaker.speaker_uuid===vv_speaker_uuid);
-            const vv_speaker_name = vv_speakers[vv_speaker_idx].name;
-            const vv_style_name = vv_speakers[vv_speaker_idx].styles[0].name;
-
-            //ページ
-            const max_page = Math.ceil(vv_speakers.length/(MENU_MAX-2));
-            const now_page = Math.ceil((vv_speaker_idx+1)/(MENU_MAX-2));
-            const pre_page = now_page>1 ? now_page-1 : max_page;
-            const next_page = now_page<max_page ? now_page+1 : 1;
-            
-            //ページの先頭スピーカー
-            const pre_vv_speaker_idx = (pre_page-1)*(MENU_MAX-2);
-            const next_vv_speaker_idx = (next_page-1)*(MENU_MAX-2);
-            const pre_vv_speaker_uuid = vv_speakers.at(pre_vv_speaker_idx).speaker_uuid
-            const next_vv_speaker_uuid = vv_speakers.at(next_vv_speaker_idx).speaker_uuid
-
-            //情報の取得
-            let vv_speaker_info = null;
-            let vv_style_info = null;
-            vv_speaker_info = (await voicevox.getSpeakerInfo(vv_speaker_uuid)).data;
-            vv_style_info = vv_speaker_info.style_infos[0];
-
-            //メニューの更新
-            const tmp_map = new Map([["gui_json", [JSON.parse(JSON.stringify(map.get("gui_json").find(gui => gui.id==="read_set_server_speaker")))]]]);
-            if(pre_page < now_page){
-                tmp_map.get("gui_json")[0].menus[0].options.push(
-                    {
-                        "label" : "前のページへ",
-                        "value" : `read_set_server_speaker@${pre_vv_speaker_uuid}`,
-                        "description" : `${pre_page}/${max_page}`,
-                        "emoji" : "🔼"
-                    }
-                );
+        let vv_property = null;
+        for(const element of map.get("read_property_json")){
+            if(element.id === "VOICEVOX"){
+                vv_property = element;
+                break;
             }
-            for(let i=((now_page-1)*(MENU_MAX-2)); i<vv_speakers.length && i<((now_page-1)*(MENU_MAX-2)+(MENU_MAX-2)); i++){
-                if(i === vv_speaker_idx){
-                    tmp_map.get("gui_json")[0].menus[0].options.push(
-                        {
-                            "label" : `${vv_speaker_name}(${vv_style_name})`,
-                            "value" : `read_set_server`,
-                            "description" : "決定する",
-                            "emoji" : "✅"
-                        },
-                    )
-                }else{
-                    tmp_map.get("gui_json")[0].menus[0].options.push(
-                        {
-                            "label" : vv_speakers[i].name,
-                            "value" : `read_set_server_speaker@${vv_speakers[i].speaker_uuid}`,
-                            "description" : vv_speakers[i].styles[0].name,
-                            "emoji" : "🔘"
-                        }
-                    )
-                }
-            }
-            if(next_page > now_page){
-                tmp_map.get("gui_json")[0].menus[0].options.push(
-                    {
-                        "label" : "次のページへ",
-                        "value" : `read_set_server_speaker@${next_vv_speaker_uuid}`,
-                        "description" : `${next_page}/${max_page}`,
-                        "emoji" : "🔽"
-                    }
-                );
-            }
-
-            //スピーカーページの送信
-            await helper.sendGUI(interaction, gui.create(tmp_map, "read_set_server_speaker", {"{{__SPEAKER_NAME__}}":vv_speaker_name, "{{__STYLE_NAME__}}":vv_style_name, "{{__POLICY_URL__}}":vv_speaker_info.policy.match(/(https?:\/\/[\w\-\.\/\?\,\#\:\u3000-\u30FE\u4E00-\u9FA0\uFF01-\uFFE3]+)/)[0], "{{__ICON_NAME__}}":`icon.jpg`, "{{__ICON_BASE64__}}":vv_style_info.icon, "{{__VOICE_SAMPLE_NAME__}}":`${vv_speaker_name}(${vv_style_name})のサンプル音声.mp3`, "{{__VOICE_SAMPLE_BASE64__}}":vv_style_info.voice_samples[0], "{{__SPEAKER_UUID__}}":vv_speaker_uuid}));
-            tmp_map.clear();
         }
+        if(!vv_property) throw new Error(`read.js => setUserSpeaker() \n not define property id : VOICEVOX`);
+
+        //現在のスピーカー
+        const vv_speaker_uuid = interaction?.values?.[0]?.split("speaker@")[1] ?? guild_info.vv_uuid ?? vv_property.uuid;
+        const vv_speaker_idx = vv_speakers.findIndex(speaker => speaker.speaker_uuid===vv_speaker_uuid);
+        const vv_speaker_name = vv_speakers[vv_speaker_idx].name;
+        const vv_style_name = vv_speakers[vv_speaker_idx].styles[0].name;
+
+        //ページ
+        const max_page = Math.ceil(vv_speakers.length/(discord_menu_max-2));
+        const now_page = Math.ceil((vv_speaker_idx+1)/(discord_menu_max-2));
+        const pre_page = now_page>1 ? now_page-1 : max_page;
+        const next_page = now_page<max_page ? now_page+1 : 1;
+
+        //ページの先頭スピーカー
+        const pre_vv_speaker_idx = (pre_page-1)*(discord_menu_max-2);
+        const next_vv_speaker_idx = (next_page-1)*(discord_menu_max-2);
+        const pre_vv_speaker_uuid = vv_speakers.at(pre_vv_speaker_idx).speaker_uuid
+        const next_vv_speaker_uuid = vv_speakers.at(next_vv_speaker_idx).speaker_uuid
+
+        //情報の取得
+        let vv_speaker_info = null;
+        let vv_style_info = null;
+        vv_speaker_info = (await vv.getSpeakerInfo(vv_speaker_uuid)).data;
+        vv_style_info = vv_speaker_info.style_infos[0];
+        
+        //メニューの更新
+        const tmp_map = new Map([["gui_json", [JSON.parse(JSON.stringify(map.get("gui_json").find(gui => gui.id==="read_set_guild_speaker")))]]]);
+        if(pre_page < now_page){
+            tmp_map.get("gui_json")[0].menus[0].options.push(
+                {
+                    "label" : "前のページへ",
+                    "value" : `read_set_guild_speaker@${pre_vv_speaker_uuid}`,
+                    "description" : `${pre_page}/${max_page}`,
+                    "emoji" : "🔼"
+                }
+            );
+        }
+        for(let i=((now_page-1)*(discord_menu_max-2)); i<vv_speakers.length && i<((now_page-1)*(discord_menu_max-2)+(discord_menu_max-2)); i++){
+            if(i === vv_speaker_idx){
+                tmp_map.get("gui_json")[0].menus[0].options.push(
+                    {
+                        "label" : `${vv_speaker_name}(${vv_style_name})`,
+                        "value" : `read_set_guild`,
+                        "description" : "決定する",
+                        "emoji" : "✅"
+                    },
+                )
+            }
+            if(i !== vv_speaker_idx){
+                tmp_map.get("gui_json")[0].menus[0].options.push(
+                    {
+                        "label" : vv_speakers[i].name,
+                        "value" : `read_set_guild_speaker@${vv_speakers[i].speaker_uuid}`,
+                        "description" : vv_speakers[i].styles[0].name,
+                        "emoji" : "🔘"
+                    }
+                )
+            }
+        }
+        if(next_page > now_page){
+            tmp_map.get("gui_json")[0].menus[0].options.push(
+                {
+                    "label" : "次のページへ",
+                    "value" : `read_set_guild_speaker@${next_vv_speaker_uuid}`,
+                    "description" : `${next_page}/${max_page}`,
+                    "emoji" : "🔽"
+                }
+            );
+        }
+
+        //スピーカーページの送信
+        await utils.sendGUI(interaction, gui.create(tmp_map, "read_set_guild_speaker",
+            {
+                "{{__SPEAKER_NAME__}}" : vv_speaker_name,
+                "{{__STYLE_NAME__}}" : vv_style_name,
+                "{{__POLICY_URL__}}" : vv_speaker_info.policy.match(/(https?:\/\/[\w\-\.\/\?\,\#\:\u3000-\u30FE\u4E00-\u9FA0\uFF01-\uFFE3]+)/)[0],
+                "{{__ICON_NAME__}}" : `icon.jpg`,
+                "{{__ICON_BASE64__}}" : vv_style_info.icon,
+                "{{__VOICE_SAMPLE_NAME__}}" : `${vv_speaker_name}(${vv_style_name})のサンプル音声.mp3`,
+                "{{__VOICE_SAMPLE_BASE64__}}" : vv_style_info.voice_samples[0],
+                "{{__SPEAKER_UUID__}}" : vv_speaker_uuid
+            }
+        ));
+        tmp_map.clear();
         
         return;
     }catch(e){
-        throw new Error(`read.js => setUserSpeaker() \n ${e}`);
+        throw new Error(`read.js => setGuildSpeaker() \n ${e}`);
     }
 }
 
 //サーバー設定＠スタイル
-async function setServerStyle(interaction, map){
+async function setGuildStyle(interaction, map){
     try{
-        const server_info = await db.getServerInfo(interaction.guild.id);
+        //情報の取得
+        const guild_id = utils.getGuildId(interaction);
+        const guild_info = await db.getGuildInfo(guild_id);
+        const vv_speakers = map.get("voicevox_speakers");
+        const discord_menu_max = 25;
 
-        //VOICEVOXのスタイル設定
-        if(server_info.read_app === "VOICEVOX"){
-            const vv_speakers = map.get("voicevox_speakers");
-
-            //現在のスピーカー
-            const vv_speaker_uuid = server_info.vv_uuid;
-            const vv_speaker_idx = vv_speakers.findIndex(speaker => speaker.speaker_uuid===vv_speaker_uuid);
-            const vv_speaker_name = vv_speakers[vv_speaker_idx].name;
-            const vv_styles = vv_speakers[vv_speaker_idx].styles;
-            const vv_style_id = interaction.values[0].split("style@")[1] ?? vv_styles[0].id;
-            const vv_style_idx = vv_styles.findIndex(style => style.id===parseInt(vv_style_id));
-            const vv_style_name = vv_styles[vv_style_idx].name;
-
-            //ページ
-            const max_page = Math.ceil(vv_styles.length/(MENU_MAX-2));
-            const now_page = Math.ceil((vv_style_idx+1)/(MENU_MAX-2));
-            const pre_page = now_page>1 ? now_page-1 : max_page;
-            const next_page = now_page<max_page ? now_page+1 : 1;
-            
-            //ページの先頭スタイル
-            const pre_vv_style_idx = (pre_page-1)*(MENU_MAX-2);
-            const next_vv_style_idx = (next_page-1)*(MENU_MAX-2);
-            const pre_vv_style_id = vv_styles.at(pre_vv_style_idx).id
-            const next_vv_style_id = vv_styles.at(next_vv_style_idx).id
-
-            //情報の取得
-            let vv_speaker_info = null;
-            let vv_style_info = null;
-            vv_speaker_info = (await voicevox.getSpeakerInfo(vv_speaker_uuid)).data;
-            vv_style_info = vv_speaker_info.style_infos.find(info => info.id === parseInt(vv_style_id));
-
-            //メニューの更新
-            const tmp_map = new Map([["gui_json", [JSON.parse(JSON.stringify(map.get("gui_json").find(gui => gui.id==="read_set_server_style")))]]]);
-            if(pre_page < now_page){
-                tmp_map.get("gui_json")[0].menus[0].options.push(
-                    {
-                        "label" : "前のページへ",
-                        "value" : `read_set_server_style@${pre_vv_style_id}`,
-                        "description" : `${pre_page}/${max_page}`,
-                        "emoji" : "🔼"
-                    }
-                );
+        let vv_property = null;
+        for(const element of map.get("read_property_json")){
+            if(element.id === "VOICEVOX"){
+                vv_property = element;
+                break;
             }
-            for(let i=((now_page-1)*(MENU_MAX-2)); i<vv_styles.length && i<((now_page-1)*(MENU_MAX-2)+(MENU_MAX-2)); i++){
-                if(i === vv_style_idx){
-                    tmp_map.get("gui_json")[0].menus[0].options.push(
-                        {
-                            "label" : `${vv_speaker_name}(${vv_style_name})`,
-                            "value" : `read_set_server`,
-                            "description" : "決定する",
-                            "emoji" : "✅"
-                        },
-                    )
-                }else{
-                    tmp_map.get("gui_json")[0].menus[0].options.push(
-                        {
-                            "label" : vv_styles[i].name,
-                            "value" : `read_set_server_style@${vv_styles[i].id}`,
-                            "description" : vv_speaker_name,
-                            "emoji" : "🔘"
-                        }
-                    )
-                }
-            }
-            if(next_page > now_page){
-                tmp_map.get("gui_json")[0].menus[0].options.push(
-                    {
-                        "label" : "次のページへ",
-                        "value" : `read_set_server_style@${next_vv_style_id}`,
-                        "description" : `${next_page}/${max_page}`,
-                        "emoji" : "🔽"
-                    }
-                );
-            }
-
-            //スタイルページの送信
-            await helper.sendGUI(interaction, gui.create(tmp_map, "read_set_server_style", {"{{__SPEAKER_NAME__}}":vv_speaker_name, "{{__STYLE_NAME__}}":vv_style_name, "{{__POLICY_URL__}}":vv_speaker_info.policy.match(/(https?:\/\/[\w\-\.\/\?\,\#\:\u3000-\u30FE\u4E00-\u9FA0\uFF01-\uFFE3]+)/)[0], "{{__ICON_NAME__}}":`icon.jpg`, "{{__ICON_BASE64__}}":vv_style_info.icon, "{{__VOICE_SAMPLE_NAME__}}":`${vv_speaker_name}(${vv_style_name})のサンプル音声.mp3`, "{{__VOICE_SAMPLE_BASE64__}}":vv_style_info.voice_samples[0], "{{__STYLE_ID__}}":vv_style_id}));
-            tmp_map.clear();
         }
+        if(!vv_property) throw new Error(`read.js => setUserStyle() \n not define property id : VOICEVOX`);
+
+        //現在のスピーカー
+        const vv_speaker_uuid = guild_info.vv_uuid ?? vv_property.uuid;
+        const vv_speaker_idx = vv_speakers.findIndex(speaker => speaker.speaker_uuid===vv_speaker_uuid);
+        const vv_speaker_name = vv_speakers[vv_speaker_idx].name;
+        const vv_styles = vv_speakers[vv_speaker_idx].styles;
+        const vv_style_id = interaction?.values?.[0].split("style@")[1] ?? guild_info.vv_id ?? vv_styles[0].id;
+        const vv_style_idx = vv_styles.findIndex(style => style.id===parseInt(vv_style_id));
+        const vv_style_name = vv_styles[vv_style_idx].name;
+
+        //ページ
+        const max_page = Math.ceil(vv_styles.length/(discord_menu_max-2));
+        const now_page = Math.ceil((vv_style_idx+1)/(discord_menu_max-2));
+        const pre_page = now_page>1 ? now_page-1 : max_page;
+        const next_page = now_page<max_page ? now_page+1 : 1;
+            
+        //ページの先頭スタイル
+        const pre_vv_style_idx = (pre_page-1)*(discord_menu_max-2);
+        const next_vv_style_idx = (next_page-1)*(discord_menu_max-2);
+        const pre_vv_style_id = vv_styles.at(pre_vv_style_idx).id
+        const next_vv_style_id = vv_styles.at(next_vv_style_idx).id
+
+
+        //情報の取得
+        let vv_speaker_info = null;
+        let vv_style_info = null;
+        vv_speaker_info = (await vv.getSpeakerInfo(vv_speaker_uuid)).data;
+        vv_style_info = vv_speaker_info.style_infos.find(info => info.id === parseInt(vv_style_id));
+
+        //メニューの更新
+        const tmp_map = new Map([["gui_json", [JSON.parse(JSON.stringify(map.get("gui_json").find(gui => gui.id==="read_set_guild_style")))]]]);
+        if(pre_page < now_page){
+            tmp_map.get("gui_json")[0].menus[0].options.push(
+                {
+                    "label" : "前のページへ",
+                    "value" : `read_set_guild_style@${pre_vv_style_id}`,
+                    "description" : `${pre_page}/${max_page}`,
+                    "emoji" : "🔼"
+                }
+            );
+        }
+        for(let i=((now_page-1)*(discord_menu_max-2)); i<vv_styles.length && i<((now_page-1)*(discord_menu_max-2)+(discord_menu_max-2)); i++){
+            if(i === vv_style_idx){
+                tmp_map.get("gui_json")[0].menus[0].options.push(
+                    {
+                        "label" : `${vv_speaker_name}(${vv_style_name})`,
+                        "value" : `read_set_guild`,
+                        "description" : "決定する",
+                        "emoji" : "✅"
+                    },
+                )
+            }
+            if(i !== vv_style_idx){
+                tmp_map.get("gui_json")[0].menus[0].options.push(
+                    {
+                        "label" : vv_styles[i].name,
+                        "value" : `read_set_guild_style@${vv_styles[i].id}`,
+                        "description" : vv_speaker_name,
+                        "emoji" : "🔘"
+                    }
+                )
+            }
+        }
+        if(next_page > now_page){
+            tmp_map.get("gui_json")[0].menus[0].options.push(
+                {
+                    "label" : "次のページへ",
+                    "value" : `read_set_guild_style@${next_vv_style_id}`,
+                    "description" : `${next_page}/${max_page}`,
+                    "emoji" : "🔽"
+                }
+            );
+        }
+            
+        //スタイルページの送信
+        await utils.sendGUI(interaction, gui.create(tmp_map, "read_set_guild_style",
+            {
+                "{{__SPEAKER_NAME__}}" : vv_speaker_name,
+                "{{__STYLE_NAME__}}" : vv_style_name,
+                "{{__POLICY_URL__}}" : vv_speaker_info.policy.match(/(https?:\/\/[\w\-\.\/\?\,\#\:\u3000-\u30FE\u4E00-\u9FA0\uFF01-\uFFE3]+)/)[0],
+                "{{__ICON_NAME__}}" : `icon.jpg`,
+                "{{__ICON_BASE64__}}" : vv_style_info.icon,
+                "{{__VOICE_SAMPLE_NAME__}}" : `${vv_speaker_name}(${vv_style_name})のサンプル音声.mp3`,
+                "{{__VOICE_SAMPLE_BASE64__}}" : vv_style_info.voice_samples[0],
+                "{{__STYLE_ID__}}" : vv_style_id
+            }
+        ));
+        tmp_map.clear();
         
         return;
     }catch(e){
@@ -869,52 +1053,55 @@ async function setServerStyle(interaction, map){
     }
 }
 
-//スピーカー選択肢の取得
-async function getSpeakerChoices(interaction, map){
+//スピーカー選択肢の表示
+async function setSpeakers(interaction, map){
     try{
+        const discord_menu_max = 25;
         const vv_speakers = map.get("voicevox_speakers");
         const focus_opt = interaction.options.getFocused(true);
         const choices = new Array();
 
-        vv_speakers.find(speaker => {
-            if(speaker.name.includes(focus_opt.value)){
-                choices.push(speaker.name);
-            }
-        });
+        //一致するspeakerの取得
+        vv_speakers.find(speaker => {if(speaker.name.includes(focus_opt.value)) choices.push(speaker.name);});
 
-        if(!choices.length){
-            choices.push("ランダム");
-        }
+        //一致するspeakerがない場合はランダムを表示
+        if(!choices.length) choices.push("ランダム");
 
-        return choices.slice(0, 25);
+        await interaction.respond((choices.slice(0, discord_menu_max)).map(choice => ({name: choice, value: choice})));
+        return;
+
     }catch(e){
-        throw new Error(`read.js => getSpeakerChoices() \n ${e}`);
+        throw new Error(`read.js => setSpeakers() \n ${e}`);
     }
 }
 
-//スタイル選択肢の取得
-async function getStyleChoices(interaction, map){
+//スタイル選択肢の表示
+async function setStyles(interaction, map){
     try{
-        const user_info = await db.getUserInfo(helper.getUserId(interaction));
-        const server_info = await db.getServerInfo(helper.getGuildId(interaction));
-        const system_id = helper.getSystemId(interaction);
+        const discord_menu_max = 25;
         const vv_speakers = map.get("voicevox_speakers");
-        const vv_speaker = interaction.options.getString("speaker") ?? (system_id.includes("user") ? user_info.vv_uuid : null) ?? server_info.vv_uuid;
-        const vv_speaker_info = vv_speakers.find(speaker => speaker.name===vv_speaker || speaker.speaker_uuid===vv_speaker);
         const focus_opt = interaction.options.getFocused(true);
         const choices = new Array();
-        
-        vv_speaker_info?.styles?.find(style => {
-            if(style.name.includes(focus_opt.value)){
-                choices.push(style.name);
-            }
-        });
 
-        if(!choices.length){
-            choices.push("ランダム");
-        }
+        const system_id = utils.getSystemId(interaction);
+        const user_info = await db.getUserInfo(utils.getUserId(interaction));
+        const guild_info = await db.getGuildInfo(utils.getGuildId(interaction));
 
-        return choices.slice(0, 25);
+        //焦点となるスピーカーの取得
+        let focus_speaker = interaction.options.getString("speaker") ?? null;
+        if(system_id === "read_set_user") focus_speaker = user_info.vv_uuid ?? null;
+        if(system_id === "read_set_guild") focus_speaker = guild_info.vv_uuid ?? null;
+
+        //一致するstyleの取得
+        const focus_speaker_info = vv_speakers.find(speaker => speaker.name===focus_speaker || speaker.speaker_uuid===focus_speaker);
+        focus_speaker_info?.styles?.find(style => {if(style.name.includes(focus_opt.value)) choices.push(style.name);});
+
+        //一致するstyleがない場合はランダムを表示
+        if(!choices.length) choices.push("ランダム");
+
+        await interaction.respond((choices.slice(0, discord_menu_max)).map(choice => ({name: choice, value: choice})));
+        return;
+
     }catch(e){
         throw new Error(`read.js => getStyleChoices() \n ${e}`);
     }
@@ -923,15 +1110,24 @@ async function getStyleChoices(interaction, map){
 //読み上げ自動終了
 async function autoEnd(old_state, new_state, map){
     try{
-        const text_channels = old_state.guild.channels.cache.filter((channel) => map.get(`read_text_${channel.id}`));
+        //変更前情報が存在しない場合は終了
+        if(!old_state) return;
 
-        text_channels.forEach((channel) => map.delete(`read_text_${channel.id}`));
-        map.get(`read_voice_${old_state.channel.id}`).connection.destroy();
-        map.delete(`read_voice_${old_state.channel.id}`);
+        //残っている読み上げを終了
+        const guild_id = utils.getGuildId(old_state);
+        map.set(`vv_chain_${guild_id}`, Promise.resolve());
 
-        await helper.sendGUI(text_channels.at(0), gui.create(map, helper.getSystemId(old_state), {"{{__OLD_VOICE_CHANNEL__}}":old_state.channel}));
-        
+        //連携しているテキストチャンネルをすべて破棄
+        const text_channels = old_state.guild.channels.cache.filter((channel) => map.get(`read_channel_${channel.id}`));
+        text_channels.forEach((channel) => map.delete(`read_channel_${channel.id}`));
+
+        //接続の再破棄
+        map.get(`read_subscribe_${old_state.channel.id}`)?.connection?.destroy();
+        map.delete(`read_subscribe_${old_state.channel.id}`);
+
+        await utils.sendGUI(text_channels.at(0), gui.create(map, utils.getSystemId(old_state), {"{{__OLD_VOICE_CHANNEL__}}" : old_state.channel}));
         return;
+        
     }catch(e){
         throw new Error(`read.js => autoEnd() \n ${e}`);
     }
@@ -940,14 +1136,24 @@ async function autoEnd(old_state, new_state, map){
 //読み上げキック終了
 async function manualKick(old_state, new_state, map){
     try{
-        const text_channels = old_state.guild.channels.cache.filter((channel) => map.get(`read_text_${channel.id}`));
+        //変更前情報が存在しない場合は終了
+        if(!old_state) return;
 
-        text_channels.forEach((channel) => map.delete(`read_text_${channel.id}`));
-        map.delete(`read_voice_${old_state.channel.id}`);
+        //残っている読み上げを終了
+        const guild_id = utils.getGuildId(old_state);
+        map.set(`vv_chain_${guild_id}`, Promise.resolve());
 
-        await helper.sendGUI(text_channels.at(0), gui.create(map, helper.getSystemId(old_state), {"{{__OLD_VOICE_CHANNEL__}}":old_state.channel}));
-        
+        //連携しているテキストチャンネルをすべて破棄
+        const text_channels = old_state.guild.channels.cache.filter((channel) => map.get(`read_channel_${channel.id}`));
+        text_channels.forEach((channel) => map.delete(`read_channel_${channel.id}`));
+
+        //接続の再破棄
+        map.get(`read_subscribe_${old_state.channel.id}`)?.connection?.destroy();
+        map.delete(`read_subscribe_${old_state.channel.id}`);
+
+        await utils.sendGUI(text_channels.at(0), gui.create(map, utils.getSystemId(old_state), {"{{__OLD_VOICE_CHANNEL__}}" : old_state.channel}));
         return;
+
     }catch(e){
         throw new Error(`read.js => manualKick() \n ${e}`);
     }
@@ -956,29 +1162,50 @@ async function manualKick(old_state, new_state, map){
 //読み上げ移動変更
 async function manualMove(old_state, new_state, map){
     try{
-        const text_channels = old_state.guild.channels.cache.filter((channel) => map.get(`read_text_${channel.id}`));
-        const new_voice_channel = await vc.connect(new_state.channel);
+        //変更前後情報が存在しない場合は終了
+        if(!old_state || !new_state) return;
 
-        text_channels.forEach((channel) => map.set(`read_text_${channel.id}`, new_state.channel.id));
-        map.set(`read_voice_${new_state.channel.id}`, new_voice_channel.subscribe(createAudioPlayer()));
-        map.delete(`read_voice_${old_state.channelId}`);
+        //残っている読み上げを終了
+        const guild_id = utils.getGuildId(old_state);
+        map.set(`vv_chain_${guild_id}`, Promise.resolve());
 
-        await helper.sendGUI(text_channels.at(0), gui.create(map, helper.getSystemId(old_state), {"{{__OLD_VOICE_CHANNEL__}}":old_state.channel, "{{__NEW_VOICE_CHANNEL__}}":new_state.channel}));
-        
+        //移動先権限の確認
+        const permission = new_state.channel.permissionsFor(old_state.guild.members.me);
+        if(!permission.has(PermissionFlagsBits.Connect) || !permission.has(PermissionFlagsBits.Speak)){
+            await manualKick(old_state, new_state, map);
+            return;
+        }
+
+        //連携しているテキストチャンネルをすべて更新
+        const text_channels = old_state.guild.channels.cache.filter((channel) => map.get(`read_channel_${channel.id}`));
+        text_channels.forEach((channel) => map.set(`read_channel_${channel.id}`, new_state.channel.id));
+
+        //接続の更新
+        const connect_voice_channel = await vc.connect(new_state.channel);
+        map.set(`read_subscribe_${new_state.channel.id}`, connect_voice_channel.subscribe(createAudioPlayer()));
+        map.delete(`read_subscribe_${old_state.channel.id}`);
+
+        await utils.sendGUI(text_channels.at(0), gui.create(map, utils.getSystemId(old_state),
+            {
+                "{{__OLD_VOICE_CHANNEL__}}" : old_state.channel,
+                "{{__NEW_VOICE_CHANNEL__}}" : new_state.channel
+            }
+        ));
         return;
+
     }catch(e){
-        throw new Error(`read.js => manualKick() \n ${e}`);
+        throw new Error(`read.js => manualMove() \n ${e}`);
     }
 }
 
 //読み上げコマンド実行
 async function execute(trigger, map){
     try{
-        const system_id = helper.getSystemId(trigger);
+        const system_id = utils.getSystemId(trigger);
 
         //延期の送信
-        if(helper.isInteraction(trigger) && !system_id.includes("modal")){
-            await helper.sendDefer(trigger);
+        if(utils.isInteraction(trigger) && !system_id.includes("modal")){
+            await utils.sendDefer(trigger);
         }
 
         //読み上げ
@@ -1017,9 +1244,9 @@ async function execute(trigger, map){
             return;
         }
 
-        //サーバー設定コマンド
-        if(system_id === "read_set_server"){
-            await setServer(trigger, map);
+        //ギルド設定コマンド
+        if(system_id === "read_set_guild"){
+            await setGuild(trigger, map);
             return;
         }
 
@@ -1035,32 +1262,34 @@ async function execute(trigger, map){
             return;
         }
 
-        //サーバースピーカー設定ページ
-        if(system_id.startsWith("read_set_server_speaker")){
-            await setServerSpeaker(trigger, map);
+        //ギルドスピーカー設定ページ
+        if(system_id.startsWith("read_set_guild_speaker")){
+            await setGuildSpeaker(trigger, map);
             return;
         }
 
-        //サーバースピーカー設定ページ
-        if(system_id.startsWith("read_set_server_style")){
-            await setServerStyle(trigger, map);
+        //ギルドスタイル設定ページ
+        if(system_id.startsWith("read_set_guild_style")){
+            await setGuildStyle(trigger, map);
             return;
         }
 
         //モーダルの送信
         if(system_id.includes("modal")){
-            await helper.sendModal(trigger, gui.create(map, system_id));
-            await helper.sendGUI(trigger, gui.create(map, "read"));
+            await utils.sendModal(trigger, gui.create(map, system_id));
+            await utils.sendGUI(trigger, gui.create(map, "read"));
             return;
         }
 
         //GUI送信
-        await helper.sendGUI(trigger, gui.create(map, system_id));
-        return;
+        await utils.sendGUI(trigger, gui.create(map, system_id));
 
+        return;
     }catch(e){
         throw new Error(`read.js => execute() \n ${e}`);
     }
+
+    throw new Error(`read.js => execute() \n not define system id : ${utils.getSystemId(trigger)}`);
 }
 
 //コマンドの補助
@@ -1070,15 +1299,13 @@ async function autoComplete(interaction, map){
 
         //speakerオプションの補助
         if(focus_opt.name === "speaker"){
-            const choices = await getSpeakerChoices(interaction, map);
-            await interaction.respond(choices.map(choice => ({name: choice, value: choice})));
+            await setSpeakers(interaction, map);
             return;
         }
 
         //styleオプションの補助
         if(focus_opt.name === "style"){
-            const choices = await getStyleChoices(interaction, map);
-            await interaction.respond(choices.map(choice => ({name: choice, value: choice})));
+            await setStyles(interaction, map);
             return;
         }
     }catch(e){
@@ -1091,7 +1318,7 @@ async function autoComplete(interaction, map){
 //ボイスチャンネルの監視
 async function voiceState(old_state, new_state, map){
     try{
-        const system_id = helper.getSystemId(old_state);
+        const system_id = utils.getSystemId(old_state);
 
         //読み上げ自動終了
         if(system_id === "read_voice_auto_end"){
@@ -1110,13 +1337,10 @@ async function voiceState(old_state, new_state, map){
             await manualMove(old_state, new_state, map);
             return;
         }
+
     }catch(e){
         throw new Error(`read.js => voiceState() \n ${e}`);
     }
     
-    throw new Error(`read.js => voiceState() \n not define system id`);
+    throw new Error(`read.js => voiceState() \n not define system id : ${utils.getSystemId(old_state)}`);
 }
-
-/*  todo
-マニュアル移動だとプライベートチャンネルに接続できちゃうのを何とかする
-*/

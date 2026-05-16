@@ -1,0 +1,35 @@
+[
+    {
+        "id" : "read_text",
+        "max" : 50,
+        "omit" : "以下略",
+        "honorific" : "さん、",
+        "split_time" : 300000
+    },
+    {
+        "id" : "read_dict",
+        "surface_max" : 32,
+        "pronunciation_max" : 64,
+        "accent_min" : 0,
+        "priority_min" : 0,
+        "priority_max" : 10
+
+    },
+    {
+        "id" : "VOICEVOX",
+        "uuid" : "35b2c544-660e-401e-b503-0e14c635303a",
+        "style_id" : 8,
+        "speed" : 1.00,
+        "speed_min" : 0.50,
+        "speed_max" : 2.00,
+        "pitch" : 0.00,
+        "pitch_min" : -0.15,
+        "pitch_max" : 0.15,
+        "intonation" : 1.00,
+        "intonation_min" : 0.00,
+        "intonation_max" : 2.00,
+        "volume" : 1.00,
+        "volume_min" : 0.00,
+        "volume_max" : 2.00
+    }
+]

@@ -1,0 +1,346 @@
+[
+    {
+        "id" : "String",
+        "content" : "String || null",
+        "embeds" : [
+            {
+                "title" : "String || null",
+                "url" : "String || null",
+                "thumbnail" : {
+                    "name" : "String || null",
+                    "path" : "String || null",
+                    "base64" : "String || null"
+                },
+                "description" : "String || null",                
+                "fields" : [
+                    {
+                        "name" : "String",
+                        "value" : "String",
+                        "inline" : "bool"
+                    }
+                ],
+                "image" : "String || null",
+                "footer" : {
+                    "text" : "String || null",
+                    "url" : "String || null"
+                },
+                "color" : "###### || null"
+            }
+        ],
+        "files" : [
+            {
+                "name" : "String || null",
+                "path" : "String || null",
+                "base64" : "String || null"
+            }
+        ],
+        "menus" : [
+            {
+                "id" : "String",
+                "placeholder" : "String",
+                "disabled" : "bool || null",
+                "options" : [
+                    {
+                        "label" : "String",
+                        "value" : "String",
+                        "description" : "String || null",
+                        "emoji" : "String || null"
+                    }
+                ]
+            }
+        ],
+        "buttons" : [
+            {
+                "label" : "String",
+                "id" : "String",
+                "emoji" : "String || null",
+                "style" : "String || null",
+                "disabled" : "bool || null"
+            }
+        ],
+        "modals" : [
+            {
+                "title" : "String",
+                "id" : "String",
+                "inputs" : [
+                    {
+                        "label" : "String",
+                        "id" : "String",
+                        "placeholder" : "String || null",
+                        "style" : "String || null",
+                        "max" : "Number || null",
+                        "min" : "Number || null",
+                        "required" : "bool || null"
+                    }
+                ]
+            }
+        ]
+    },
+
+    
+    {
+        "id" : "mention",
+        "content" : null,
+        "embeds" : [
+            {
+                "title" : "すにゃBot",
+                "url" : "https://github.com/Snyiv495/Snyivot",
+                "thumbnail" : {
+                    "name" : "thumbnail.png",
+                    "path" : "tsumugi/default.png",
+                    "base64" : null
+                },
+                "description" : null,
+                "fields" : [
+                    {
+                        "name" : "ℹ️ 更新情報",
+                        "value" : "🆕 1.5.26 一部機能のサービス終了"
+                    }
+                ],
+                "image" : null,
+                "footer" : {
+                    "text" : "Ver. 1.5.26\nVOICEVOX:春日部つむぎ",
+                    "url" : null
+                },
+                "color" : "000000"
+            }
+        ],
+        "files" : [],
+        "menus" : [],
+        "buttons" : [
+            {
+                "label" : "開始",
+                "id" : "home",
+                "emoji" : "🛎️",
+                "style" : "Primary",
+                "disabled" : false
+            }
+        ],
+        "modals" : []
+    },
+    {
+        "id" : "not_guild",
+        "content" : null,
+        "embeds" : [
+            {
+                "title" : "すにゃBot",
+                "url" : "https://github.com/Snyiv495/Snyivot",
+                "thumbnail" : {
+                    "name" : "thumbnail.png",
+                    "path" : "tsumugi/default.png",
+                    "base64" : null
+                },
+                "description" : null,
+                "fields" : [
+                    {
+                        "name" : "⚠️ Error",
+                        "value" : "- ここでは「すにゃbot」を利用できません\n- ギルド内で利用してください"
+                    }
+                ],
+                "image" : null,
+                "footer" : {
+                    "text" : "Ver. 1.5.26\nVOICEVOX:春日部つむぎ",
+                    "url" : null
+                },
+                "color" : "000000"
+            }
+        ],
+        "files" : [],
+        "menus" : [],
+        "buttons" : [
+            {
+                "label" : "開始",
+                "id" : "home",
+                "emoji" : "🛎️",
+                "style" : "Primary",
+                "disabled" : true
+            }
+        ],
+        "modals" : []
+    },
+    {
+        "id" : "home",
+        "content" : null,
+        "embeds" : [
+            {
+                "title" : "【ホーム】",
+                "url" : null,
+                "thumbnail" : {
+                    "name" : "thumbnail.png",
+                    "path" : "tsumugi/default.png",
+                    "base64" : null
+                },
+                "description" : "🗨️⠀機能メニューを開いて\n⠀⠀⠀使いたい機能を選んでね",                
+                "fields" : [],
+                "image" : null,
+                "footer" : {
+                    "text" : null,
+                    "url" : null
+                },
+                "color" : "00FF00"
+            }
+        ],
+        "files" : [],
+        "menus" : [
+            {
+                "id" : "home",
+                "placeholder" : "👉 機能メニュー",
+                "disabled" : false,
+                "options" : [
+                    {
+                        "label" : "AI",
+                        "value" : "ai",
+                        "description" : "AI機能のメニューを起動します",
+                        "emoji" : "🤖"
+                    },
+                    {
+                        "label" : "おみくじ",
+                        "value" : "omikuji",
+                        "description" : "おみくじ機能のメニューを起動します",
+                        "emoji" : "🥠"
+                    },
+                    {
+                        "label" : "リアクション",
+                        "value" : "reaction",
+                        "description" : "リアクション機能のメニューを起動します",
+                        "emoji" : "🌟"
+                    },
+                    {
+                        "label" : "読み上げ",
+                        "value" : "read",
+                        "description" : "読み上げ機能のメニューを起動します",
+                        "emoji" : "🎙️"
+                    },
+                    {
+                        "label" : "FAQ",
+                        "value" : "faq",
+                        "description" : "よくある質問",
+                        "emoji" : "❓"
+                    }
+                ]
+            }
+        ],
+        "buttons" : [
+            {
+                "label" : "戻る",
+                "id" : "disabled1",
+                "emoji" : "↩️",
+                "style" : "Secondary",
+                "disabled" : true
+            },
+            {
+                "label" : "ホーム",
+                "id" : "disabled2",
+                "emoji" : "🏠",
+                "style" : "Secondary",
+                "disabled" : true
+            },
+            {
+                "label" : "終わる",
+                "id" : "quit",
+                "emoji" : "⚠️",
+                "style" : "Danger",
+                "disabled" : false
+            }
+        ],
+        "modals" : []
+    },
+    {
+        "id" : "quit",
+        "content" : null,
+        "embeds" : [
+            {
+                "title" : "【終了確認】",
+                "url" : null,
+                "thumbnail" : {
+                    "name" : "thumbnail.png",
+                    "path" : "tsumugi/default.png",
+                    "base64" : null
+                },
+                "description" : "🗨️⠀お疲れ様でした\n⠀⠀⠀「このメッセージを削除する」\n⠀⠀⠀を押して終了してね",                
+                "fields" : [],
+                "image" : null,
+                "footer" : {
+                    "text" : null,
+                    "url" : null
+                },
+                "color" : "000000"
+            }
+        ],
+        "files" : [],
+        "menus" : [
+            {
+                "id" : "quit",
+                "placeholder" : "❌現在利用できません",
+                "disabled" : true,
+                "options" : []
+            }
+        ],
+        "buttons" : [
+            {
+                "label" : "再開",
+                "id" : "home",
+                "emoji" : "🛎️",
+                "style" : "Secondary",
+                "disabled" : false
+            }
+        ],
+        "modals" : []
+    },
+    {
+        "id" : "error",
+        "content" : null,
+        "embeds" : [
+            {
+                "title" : "500 Internal Server Error",
+                "url" : null,
+                "thumbnail" : {
+                    "name" : "thumbnail.png",
+                    "path" : null,
+                    "base64" : null
+                },
+                "description" : null,                
+                "fields" : [
+                    {
+                        "name" : "⚠️ Error",
+                        "value" : "予期しないエラーが発生しました"
+                    }
+                ],
+                "image" : null,
+                "footer" : {
+                    "text" : null,
+                    "url" : null
+                },
+                "color" : "FF0000"
+            }
+        ],
+        "files" : [],
+        "menus" : [
+            {
+                "id" : "error",
+                "placeholder" : "❌現在利用できません",
+                "disabled" : true,
+                "options" : []
+            }
+        ],
+        "buttons" : [
+            {
+                "label" : "ホーム",
+                "id" : "home",
+                "emoji" : "🛎️",
+                "style" : "Primary",
+                "disabled" : false
+            }
+        ],
+        "modals" : []
+    },
+    {
+        "id" : "reply",
+        "content" : "{{__REPLY__}}",
+        "embeds" : [],
+        "files" : [],
+        "menus" : [],
+        "buttons" : [],
+        "modals" : []
+    }
+]

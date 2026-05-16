@@ -1,9 +1,9 @@
 # すにゃbotの環境構築
 Android端末をサーバー化するフローを記述する
-- AndroidにTermuxをインストールしてubuntu環境を構築し、\
-そのうえでVOICEVOXとNodejsの環境を作り、すにゃbotを起動させる
-- ついでにTermux-X11を利用したgnomeデスクトップ環境も作っているが、面白そうだから作っているだけで必須ではない
+- AndroidにTermuxをインストールしてubuntu環境を構築し, そのうえでVOICEVOXとNodejsの環境を作り, すにゃbotを起動させる
+- ついでにTermux-X11を利用したgnomeデスクトップ環境も作っているが, 面白そうだから作っているだけで必須ではない
 - デスクトップ環境は調べたら無限に出てくるので割愛
+
 1. [**Termux**](#1-termux)
 2. [**Ubuntu**](#2-ubuntu)
 3. [**VOICEVOX**](#3-voicevox)
@@ -11,7 +11,6 @@ Android端末をサーバー化するフローを記述する
 5. [**すにゃbot**](#5-すにゃbot)
 6. [**起動**](#6-起動)
 7. [**その他**](#その他)
-
 
 ## 1. [Termux](https://play.google.com/store/apps/details?id=com.termux&hl=ja&pli=1)
 セットアップ(ストレージ共有, バックグラウンド起動, Termux-X11関連)
@@ -136,8 +135,8 @@ vv-engine/run
 
 ### すにゃbot
 ```
-cd Snyivot
-node src/index.js
+cd snyivot
+npm start
 ```
 
 ## その他

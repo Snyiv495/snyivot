@@ -1,7 +1,7 @@
 /*****************
     omikuji.js
     スニャイヴ
-    2025/10/14
+    2026/05/06
 *****************/
 
 module.exports = {
@@ -11,99 +11,116 @@ module.exports = {
 const fs = require('fs');
 const db = require('../core/db');
 const gui = require('../core/gui');
-const helper = require('../core/helper');
+const utils = require('../core/utils');
 const gemini = require('../integrations/gemini');
 
-//ドロー
+// ドロー
 async function draw(trigger, map){
     try{
-        const user_info = await db.getUserInfo(helper.getUserId(trigger));
-        const user_info_uranai = user_info.uranai;
+        const system_id = utils.getSystemId(trigger);
+        const user_info = await db.getUserInfo(utils.getUserId(trigger));
+        const result = user_info.omikuji_result ?? {
+            date : null,
+            fortune : null,
+            speaker_name : null,
+            speaker_uuid : null,
+            color : null,
+            item : null,
+            dinner : null,
+            quest : null,
+            advice: null
+        };
+
         const vv_speakers = map.get("voicevox_speakers");
-        const gemini_prompt_json = JSON.parse(fs.readFileSync("./src/json/gemini-prompt.json", "utf-8"));
-        const time = helper.getDate(trigger);
+        const ai_property_json = map.get("ai_property_json");
+
+        const time = utils.getDate(trigger);
         const today = `${time.year}/${time.month}/${time.date}`;
 
-        let date = user_info_uranai.date;
-        let fortune = user_info_uranai.fortune;
-        let speaker_name = user_info_uranai.speaker_name;
-        let speaker_uuid = user_info_uranai.speaker_uuid;
-        let color = user_info_uranai.color;
-        let item = user_info_uranai.item;
-        let dinner = user_info_uranai.dinner;
-        let quest = user_info_uranai.quest;
-        let advice = user_info_uranai.advice;
-
-        let prompt;
-        let content;
+        //ロード画面
+        const road_gui = await utils.sendGUI(utils.getChannelObj(trigger), gui.create(map, "omikuji_draw_roading"));
 
         //今日すでに実行していたら再送信
-        if(date === today){
-            if(helper.isInteraction(trigger)){
-                await helper.sendGUI(trigger, gui.create(map, "omikuji_luck", {"{{__SPEAKER_UUID__}}":speaker_uuid}));
-            }
-            await helper.sendGUI(trigger.channel, gui.create(map, "omikuji_draw", {"{{__DATE__}}":today, "{{__USERNAME__}}":helper.getUserName(trigger), "{{__FORTUNE__}}" : fortune, "{{__SPEAKER__}}" : speaker_name, "{{__COLOR__}}" : color, "{{__ITEM__}}" : item, "{{__DINNER__}}" : dinner, "{{__QUEST__}}" : quest, "{{__ADVICE__}}" : advice}));
+        if(result.date === today){
+            if(utils.isInteraction(trigger)) await utils.sendGUI(trigger, gui.create(map, "omikuji"));
+
+            await utils.sendGUI(road_gui, gui.create(map, "omikuji_draw",
+                {
+                    "{{__DATE__}}" : today,
+                    "{{__USERNAME__}}" : utils.getUserName(trigger),
+                    "{{__FORTUNE__}}" : result.fortune,
+                    "{{__SPEAKER__}}" : result.speaker_name,
+                    "{{__COLOR__}}" : result.color,
+                    "{{__ITEM__}}" : result.item,
+                    "{{__DINNER__}}" : result.dinner,
+                    "{{__QUEST__}}" : result.quest,
+                    "{{__ADVICE__}}" : result.advice
+                }
+            ));
             return;
         }
-
-        //ロード画面
-        const road_gui = await helper.sendGUI(trigger.channel, gui.create(map, "omikuji_draw_roading"));
 
         //運勢
         const fortune_random = Math.floor(Math.random() * 100);
         switch(true){
-            case fortune_random===0: fortune = "超大吉"; break;
-            case (0<fortune_random&&fortune_random<=4): fortune = "大吉"; break;
-            case (4<fortune_random&&fortune_random<=19): fortune = "中吉"; break;
-            case (19<fortune_random&&fortune_random<=39): fortune = "小吉"; break;
-            case (39<fortune_random&&fortune_random<=59): fortune = "末吉"; break;
-            case (59<fortune_random&&fortune_random<=79): fortune = "吉"; break;
-            case (79<fortune_random&&fortune_random<=94): fortune = "凶"; break;
-            case (94<fortune_random&&fortune_random<=98): fortune = "大凶"; break;
-            case fortune_random===99: fortune = "超大凶"; break;
-            default : fortune = "シークレット"; break;
+            case fortune_random === 0 : result.fortune = "TOP 1% USER !!!"; break;
+            case fortune_random < 5 : result.fortune = "大吉"; break;
+            case fortune_random < 20 : result.fortune = "中吉"; break;
+            case fortune_random < 40 : result.fortune = "小吉"; break;
+            case fortune_random < 60 : result.fortune = "末吉"; break;
+            case fortune_random < 80 : result.fortune = "吉"; break;
+            case fortune_random < 95 : result.fortune = "凶"; break;
+            case fortune_random < 99 : result.fortune = "大凶"; break;
+            case fortune_random === 99: result.fortune = "BOTTOM 1% USER..."; break;
+            default : result.fortune = "Error"; break;
         }
 
         //スピーカー
         const speaker_random = Math.floor(Math.random() * vv_speakers.length);
-        speaker_name = vv_speakers[speaker_random].name;
-        speaker_uuid = vv_speakers[speaker_random].speaker_uuid;
+        result.speaker_name = vv_speakers[speaker_random].name;
+        result.speaker_uuid = vv_speakers[speaker_random].speaker_uuid;
 
         //カラー
-        color = Math.random().toString(16).slice(-6);
+        result.color = Math.random().toString(16).slice(-6);
 
         //プロンプトの取得
-        for(const element of gemini_prompt_json){
-            if(element.id === "omikuji"){
-                prompt = element;
-                content = helper.replaceholder(element.content, {"{{__FORTUNE__}}":fortune});
+        for(const element of ai_property_json){
+            if(element.id === system_id && element.support === "prompt"){
+                try{
+                    // レスポンスの取得
+                    const gemini_res = await gemini.exeJson(utils.replace(element.text, {"{{__FORTUNE__}}" : result.fortune}), element, map);
+                    const gemini_res_json = JSON.parse(gemini_res.candidates[0].content.parts[0].text);
+                    result.item = gemini_res_json.item;
+                    result.dinner = gemini_res_json.dinner;
+                    result.quest = gemini_res_json.quest;
+                    result.advice = gemini_res_json.advice;
+                }catch(e){
+                    if(utils.isInteraction(trigger)) await utils.sendGUI(trigger, gui.create(map, "omikuji"));
+                    await utils.sendGUI(road_gui, gui.create(map, "omikuji_draw_failure"));
+                    throw new Error(`omikuji.js => draw() \n ${e}`);
+                }
             }
         }
 
-        //レスポンスの取得
-        try{
-            const gemini_res = await gemini.genConJson(content, prompt);
-            const gemini_res_json = JSON.parse(gemini_res.candidates[0].content.parts[0].text);
-            item = gemini_res_json.item;
-            dinner = gemini_res_json.dinner;
-            quest = gemini_res_json.quest;
-            advice = gemini_res_json.advice;
-        }catch(e){
-            if(helper.isInteraction(trigger)){
-                await helper.sendGUI(trigger, gui.create(map, "omikuji"));
-            }
-            await helper.sendGUI(road_gui, gui.create(map, "omikuji_draw_failure"));
-            return;
-        }
-
-        user_info.uranai = {date: today, fortune: fortune, speaker_name: speaker_name, speaker_uuid: speaker_uuid, color: color, item: item, dinner: dinner, quest: quest, advice: advice};
-        await db.setUserInfo(helper.getUserId(trigger), user_info);
+        result.date = today;
+        user_info.omikuji_result = result;
+        await db.setUserInfo(utils.getUserId(trigger), user_info);
 
         //おみくじ送信
-        if(helper.isInteraction(trigger)){
-            await helper.sendGUI(trigger, gui.create(map, "omikuji_luck", {"{{__SPEAKER_UUID__}}":speaker_uuid}));
-        }
-        await helper.sendGUI(road_gui, gui.create(map, "omikuji_draw", {"{{__DATE__}}":today, "{{__USERNAME__}}":helper.getUserName(trigger), "{{__FORTUNE__}}" : fortune, "{{__SPEAKER__}}" : speaker_name, "{{__COLOR__}}" : color, "{{__ITEM__}}" : item, "{{__DINNER__}}" : dinner, "{{__QUEST__}}" : quest, "{{__ADVICE__}}" : advice}));
+        if(utils.isInteraction(trigger)) await utils.sendGUI(trigger, gui.create(map, "omikuji"));
+        await utils.sendGUI(road_gui, gui.create(map, "omikuji_draw",
+            {
+                "{{__DATE__}}" : result.date,
+                "{{__USERNAME__}}" : utils.getUserName(trigger),
+                "{{__FORTUNE__}}" : result.fortune,
+                "{{__SPEAKER__}}" : result.speaker_name,
+                "{{__COLOR__}}" : result.color,
+                "{{__ITEM__}}" : result.item,
+                "{{__DINNER__}}" : result.dinner,
+                "{{__QUEST__}}" : result.quest,
+                "{{__ADVICE__}}" : result.advice
+            }
+        ));
 
         return;
     }catch(e){
@@ -111,14 +128,48 @@ async function draw(trigger, map){
     }
 }
 
-//おみくじコマンド実行
+// ブースト
+async function boost(trigger, map){
+    try{
+        const system_id = utils.getSystemId(trigger);
+        const user_info = await db.getUserInfo(utils.getUserId(trigger));
+        const result = user_info.omikuji_result ?? {
+            date : null,
+            fortune : null,
+            speaker_name : null,
+            speaker_uuid : null,
+            color : null,
+            item : null,
+            dinner : null,
+            quest : null,
+            advice: null
+        };
+
+        const time = utils.getDate(trigger);
+        const today = `${time.year}/${time.month}/${time.date}`;
+
+        //今日のおみくじのデータがあれば続行
+        if(result.date === today){
+            await utils.sendGUI(trigger, gui.create(map, "omikuji_boost", {"{{__SPEAKER_UUID__}}" : result.speaker_uuid}));
+            return;
+        }
+
+        await utils.sendGUI(trigger, gui.create(map, "omikuji_boost_failure"));
+        return;
+
+    }catch(e){
+        throw new Error(`omikuji.js => boost() \n ${e}`);
+    }
+}
+
+// おみくじコマンド実行
 async function execute(trigger, map){
     try{
-        const system_id = helper.getSystemId(trigger);
+        const system_id = utils.getSystemId(trigger);
 
         //延期の送信
-        if(helper.isInteraction(trigger) && !system_id.includes("modal")){
-            await helper.sendDefer(trigger);
+        if(utils.isInteraction(trigger) && !system_id.includes("modal")){
+            await utils.sendDefer(trigger);
         }
 
         //ドロー
@@ -127,8 +178,13 @@ async function execute(trigger, map){
             return;
         }
 
+        if(system_id === "omikuji_boost"){
+            await boost(trigger, map);
+            return;
+        }
+
         //GUI送信
-        await helper.sendGUI(trigger, gui.create(map, system_id));
+        await utils.sendGUI(trigger, gui.create(map, system_id));
         return;
 
     }catch(e){

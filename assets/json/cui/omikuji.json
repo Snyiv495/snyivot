@@ -1,0 +1,40 @@
+[
+    {
+        "name" : "string",
+        "description" : "string",
+        "subcommand" : [
+            {
+                "name" : "string",
+                "description" : "string",
+                "option" : [
+                    {
+                        "type" : "string || number || boolean",
+                        "name" : "string",
+                        "description" : "string",
+                        "autocomplete" : "true || false",
+                        "required" : "true || false",
+                        "max" : "number || null",
+                        "min" : "number || null",
+                        "choices" : [
+                            {
+                                "name" : "string",
+                                "value" : "string"
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "name" : "omikuji",
+        "description" : "おみくじコマンド",
+        "subcommand" : [
+            {
+                "name" : "_draw",
+                "description" : "今日のおみくじをひきます",
+                "option" : []
+            }
+        ]
+    }
+]

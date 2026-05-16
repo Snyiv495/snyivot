@@ -1,18 +1,19 @@
 /*****************
     vc.js
     スニャイヴ
-    2025/12/16
+    2026/05/05
 *****************/
 
 module.exports = {
     connect : connect,
-    voiceStateCmd : voiceStateCmd
+    exe : execute
 }
 
 const {joinVoiceChannel} = require('@discordjs/voice');
 
-const helper = require("./helper");
+const utils = require("./utils");
 
+// ボイスチャンネルに接続
 async function connect(voice_channel){
     try{
         const connect_voice_channel = joinVoiceChannel({
@@ -24,9 +25,8 @@ async function connect(voice_channel){
         });
 
         connect_voice_channel.on('error', (e) => {
-            //クリーンアップ処理を検討する
-            console.error(`vc.js => connect() : 接続オブジェクトエラーが発生しました。\n ${e}`);
             if(connect_voice_channel && connect_voice_channel.state.status !== 'destroyed') connect_voice_channel.destroy();
+            console.error(`vc.js => connect_voice_channel.on() \n ${e}`);
         });
 
         return connect_voice_channel;
@@ -35,9 +35,10 @@ async function connect(voice_channel){
     }
 }
 
-async function voiceStateCmd(old_state, new_state, map){
+// ボイスチャンネル更新実行
+async function execute(old_state, new_state, map){
     try{
-        const system_id = helper.getSystemId(old_state);
+        const system_id = utils.getSystemId(old_state);
         const feature_modules = map.get("feature_modules");
 
         for(const prefix in feature_modules){
@@ -47,8 +48,8 @@ async function voiceStateCmd(old_state, new_state, map){
             }
         }
     }catch(e){
-        throw new Error(`vc.js => voiceStateCmd() \n ${e}`);
+        throw new Error(`vc.js => execute() \n ${e}`);
     }
 
-    throw new Error(`vc.js => voiceStateCmd() \n not define system id : ${system_id}`);
+    throw new Error(`vc.js => execute() \n not define feature.voiceState()`);
 }

@@ -1,0 +1,172 @@
+[
+    {
+        "id" : "String",
+        "content" : "String || null",
+        "embeds" : [
+            {
+                "title" : "String || null",
+                "url" : "String || null",
+                "thumbnail" : {
+                    "name" : "String || null",
+                    "path" : "String || null",
+                    "base64" : "String || null"
+                },
+                "description" : "String || null",                
+                "fields" : [
+                    {
+                        "name" : "String",
+                        "value" : "String",
+                        "inline" : "bool"
+                    }
+                ],
+                "image" : "String || null",
+                "footer" : {
+                    "text" : "String || null",
+                    "url" : "String || null"
+                },
+                "color" : "###### || null"
+            }
+        ],
+        "files" : [
+            {
+                "name" : "String || null",
+                "path" : "String || null",
+                "base64" : "String || null"
+            }
+        ],
+        "menus" : [
+            {
+                "id" : "String",
+                "placeholder" : "String",
+                "disabled" : "bool || null",
+                "options" : [
+                    {
+                        "label" : "String",
+                        "value" : "String",
+                        "description" : "String || null",
+                        "emoji" : "String || null"
+                    }
+                ]
+            }
+        ],
+        "buttons" : [
+            {
+                "label" : "String",
+                "id" : "String",
+                "emoji" : "String || null",
+                "style" : "String || null",
+                "disabled" : "bool || null"
+            }
+        ],
+        "modals" : [
+            {
+                "title" : "String",
+                "id" : "String",
+                "inputs" : [
+                    {
+                        "label" : "String",
+                        "id" : "String",
+                        "placeholder" : "String || null",
+                        "style" : "String || null",
+                        "max" : "Number || null",
+                        "min" : "Number || null",
+                        "required" : "bool || null"
+                    }
+                ]
+            }
+        ]
+    },
+    
+
+    {
+        "id" : "reaction",
+        "content" : null,
+        "embeds" : [
+            {
+                "title" : "【リアクション】",
+                "url" : null,
+                "thumbnail" : {
+                    "name" : "thumbnail.png",
+                    "path" : "tsumugi/default.png",
+                    "base64" : null
+                },
+                "description" : "🗨️⠀ここからは利用できないよ\n⠀⠀⠀詳しくはFAQを参照してね",
+                "fields" : [],
+                "image" : null,
+                "footer" : {
+                    "text" : null,
+                    "url" : null
+                },
+                "color" : "00FF00"
+            }
+        ],
+        "files" : [],
+        "menus" : [
+            {
+                "id" : "reaction",
+                "placeholder" : "❌現在利用できません",
+                "disabled" : true,
+                "options" : []
+            }
+        ],
+        "buttons" : [
+            {
+                "label" : "戻る",
+                "id" : "disabled",
+                "emoji" : "↩️",
+                "style" : "Secondary",
+                "disabled" : true
+            },
+            {
+                "label" : "ホーム",
+                "id" : "home",
+                "emoji" : "🏠",
+                "style" : "Secondary",
+                "disabled" : false
+            },
+            {
+                "label" : "終わる",
+                "id" : "quit",
+                "emoji" : "⚠️",
+                "style" : "Danger",
+                "disabled" : false
+            }
+        ],
+        "modals" : []
+    },
+
+
+    {
+        "id" : "reaction_gyotaku",
+        "content" : null,
+        "embeds" : [
+            {
+                "title" : null,
+                "url" : null,
+                "thumbnail" : {
+                    "name" : null,
+                    "path" : null,
+                    "base64" : null
+                },
+                "description" : null,                
+                "fields" : [],
+                "image" : "attachment://{{__GYOTAKU_NAME__}}",
+                "footer" : {
+                    "text" : "created by {{__REACT_USER_NAME__}}",
+                    "url" : "{{__REACT_USER_ICON__}}"
+                },
+                "color" : "000000"
+            }
+        ],
+        "files" : [
+            {
+                "name" : "{{__GYOTAKU_NAME__}}",
+                "path" : null,
+                "base64" : "{{__GYOTAKU_BASE64__}}"
+            }
+        ],
+        "menus" : [],
+        "buttons" : [],
+        "modals" : []
+    }
+]

@@ -1,0 +1,260 @@
+[
+    {
+        "emoji" : "✂️",
+        "system_id" : "reaction_remove",
+        "spam" : false
+    },
+    {
+        "emoji" : "🗑️",
+        "system_id" : "reaction_remove",
+        "spam" : false
+    },
+    {
+        "emoji" : "🚮",
+        "system_id" : "reaction_remove",
+        "spam" : false
+    },
+    {
+        "emoji" : "🟥",
+        "system_id" : "reaction_gyotaku",
+        "spam" : true,
+        "name" : "gyotaku_red.png",
+        "canvas" : {
+            "gra_start" : "#FF000000",
+            "gra_end" : "#FF0000FF"
+        },
+        "filter" : {
+            "r" : 1.5,
+            "g" : 0.5,
+            "b" : 0.5
+        },
+        "content" : {
+            "main_color" : "#FFFFFF",
+            "sub_color" : "#000000"
+        },
+        "author" : {
+            "main_color" : "#FFFFFF",
+            "sub_color" : "#000000"
+        },
+        "date" : {
+            "main_color" : "#FFFFFF80",
+            "sub_color" : "#000000FF"
+        }
+    },
+    {
+        "emoji" : "🟧",
+        "system_id" : "reaction_gyotaku",
+        "spam" : true,
+        "name" : "gyotaku_orange.png",
+        "canvas" : {
+            "gra_start" : "#FF800000",
+            "gra_end" : "#FF8000FF"
+        },
+        "filter" : {
+            "r" : 1.5,
+            "g" : 1.0,
+            "b" : 0.5
+        },
+        "content" : {
+            "main_color" : "#FFFFFF",
+            "sub_color" : "#000000"
+        },
+        "author" : {
+            "main_color" : "#FFFFFF",
+            "sub_color" : "#000000"
+        },
+        "date" : {
+            "main_color" : "#FFFFFF80",
+            "sub_color" : "#000000FF"
+        }
+    },
+    {
+        "emoji" : "🟨",
+        "system_id" : "reaction_gyotaku",
+        "spam" : true,
+        "name" : "gyotaku_yellow.png",
+        "canvas" : {
+            "gra_start" : "#FFFF0000",
+            "gra_end" : "#FFFF00FF"
+        },
+        "filter" : {
+            "r" : 1.5,
+            "g" : 1.5,
+            "b" : 0.5
+        },
+        "content" : {
+            "main_color" : "#000000",
+            "sub_color" : "#FFFFFF"
+        },
+        "author" : {
+            "main_color" : "#000000",
+            "sub_color" : "#FFFFFF"
+        },
+        "date" : {
+            "main_color" : "#00000080",
+            "sub_color" : "#FFFFFFFF"
+        }
+    },
+    {
+        "emoji" : "🟩",
+        "system_id" : "reaction_gyotaku",
+        "spam" : true,
+        "name" : "gyotaku_green.png",
+        "canvas" : {
+            "gra_start" : "#00FF0000",
+            "gra_end" : "#00FF00FF"
+        },
+        "filter" : {
+            "r" : 0.5,
+            "g" : 1.5,
+            "b" : 0.5
+        },
+        "content" : {
+            "main_color" : "#000000",
+            "sub_color" : "#FFFFFF"
+        },
+        "author" : {
+            "main_color" : "#000000",
+            "sub_color" : "#FFFFFF"
+        },
+        "date" : {
+            "main_color" : "#00000080",
+            "sub_color" : "#FFFFFFFF"
+        }
+    },
+    {
+        "emoji" : "🟦",
+        "system_id" : "reaction_gyotaku",
+        "spam" : true,
+        "name" : "gyotaku_blue.png",
+        "canvas" : {
+            "gra_start" : "#0000FF00",
+            "gra_end" : "#0000FFFF"
+        },
+        "filter" : {
+            "r" : 0.5,
+            "g" : 0.5,
+            "b" : 1.5
+        },
+        "content" : {
+            "main_color" : "#FFFFFF",
+            "sub_color" : "#000000"
+        },
+        "author" : {
+            "main_color" : "#FFFFFF",
+            "sub_color" : "#000000"
+        },
+        "date" : {
+            "main_color" : "#FFFFFF80",
+            "sub_color" : "#000000FF"
+        }
+    },
+    {
+        "emoji" : "🟪",
+        "system_id" : "reaction_gyotaku",
+        "spam" : true,
+        "name" : "gyotaku_purple.png",
+        "canvas" : {
+            "gra_start" : "#FF00FF00",
+            "gra_end" : "#FF00FFFF"
+        },
+        "filter" : {
+            "r" : 0.5,
+            "g" : 1.5,
+            "b" : 1.5
+        },
+        "content" : {
+            "main_color" : "#FFFFFF",
+            "sub_color" : "#000000"
+        },
+        "author" : {
+            "main_color" : "#FFFFFF",
+            "sub_color" : "#000000"
+        },
+        "date" : {
+            "main_color" : "#FFFFFF80",
+            "sub_color" : "#000000FF"
+        }
+    },
+    {
+        "emoji" : "🟫",
+        "system_id" : "reaction_gyotaku",
+        "spam" : true,
+        "name" : "gyotaku_brown.png",
+        "canvas" : {
+            "gra_start" : "#80404000",
+            "gra_end" : "#804040FF"
+        },
+        "filter" : {
+            "r" : 1.0,
+            "g" : 0.75,
+            "b" : 0.75
+        },
+        "content" : {
+            "main_color" : "#FFFFFF",
+            "sub_color" : "#000000"
+        },
+        "author" : {
+            "main_color" : "#FFFFFF",
+            "sub_color" : "#000000"
+        },
+        "date" : {
+            "main_color" : "#FFFFFF80",
+            "sub_color" : "#000000FF"
+        }
+    },
+    {
+        "emoji" : "⬛",
+        "system_id" : "reaction_gyotaku",
+        "spam" : true,
+        "name" : "gyotaku_black.png",
+        "canvas" : {
+            "gra_start" : "#00000000",
+            "gra_end" : "#000000FF"
+        },
+        "filter" : {
+            "r" : 1.0,
+            "g" : 1.0,
+            "b" : 1.0
+        },
+        "content" : {
+            "main_color" : "#FFFFFF",
+            "sub_color" : "#000000"
+        },
+        "author" : {
+            "main_color" : "#FFFFFF",
+            "sub_color" : "#000000"
+        },
+        "date" : {
+            "main_color" : "#FFFFFF80",
+            "sub_color" : "#000000FF"
+        }
+    },
+    {
+        "emoji" : "⬜",
+        "system_id" : "reaction_gyotaku",
+        "spam" : true,
+        "name" : "gyotaku_white.png",
+        "canvas" : {
+            "gra_start" : "#FFFFFF00",
+            "gra_end" : "#FFFFFFFF"
+        },
+        "filter" : {
+            "r" : 1.0,
+            "g" : 1.0,
+            "b" : 1.0
+        },
+        "content" : {
+            "main_color" : "#000000",
+            "sub_color" : "#FFFFFF"
+        },
+        "author" : {
+            "main_color" : "#000000",
+            "sub_color" : "#FFFFFF"
+        },
+        "date" : {
+            "main_color" : "#00000080",
+            "sub_color" : "#FFFFFFFF"
+        }
+    }
+]
