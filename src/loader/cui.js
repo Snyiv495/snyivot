@@ -110,8 +110,19 @@ async function execute(client){
     try{
         const cui_dir = path.join(root_dir, "assets/json/cui");
         const cui_json = await file.mergeJsons(cui_dir);
-        const cmds = buildCUI(cui_json);
-        await client.application.commands.set(cmds);
+        const cmds = buildCUI(cui_json);        
+        const exist_cmds = await client.application.commands.fetch();
+        
+        // 既存のコマンドを削除
+        for(const [id, cmd] of exist_cmds){
+            if(cmd.type === 1) continue;
+            await client.application.commands.delete(id);
+        }
+        
+        // 新しいコマンドを追加
+        for(const cmd of cmds){
+            await client.application.commands.create(cmd);
+        }
 
         return;
     }catch(e){
