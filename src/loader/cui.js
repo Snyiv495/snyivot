@@ -1,19 +1,20 @@
 /*****************
     cui.js
     スニャイヴ
-    2026/05/04
+    2026/05/29
 *****************/
 
 module.exports = {
     exe : execute
 };
 
-const { 
-    SlashCommandBuilder, 
-    SlashCommandSubcommandBuilder, 
-    SlashCommandStringOption, 
-    SlashCommandNumberOption, 
-    SlashCommandBooleanOption 
+const {
+    ApplicationCommandType,
+    SlashCommandBuilder,
+    SlashCommandSubcommandBuilder,
+    SlashCommandStringOption,
+    SlashCommandNumberOption,
+    SlashCommandBooleanOption
 } = require('discord.js');
 const path = require('path');
 const root_dir = path.join(__dirname, "../../");
@@ -79,24 +80,38 @@ function buildCUI(json){
         for(const element of json){
 
             // フォーマット定義のスキップ
-            if(element.name === "string") continue;
+            if(element.type === "string") continue;
 
-            const cmd = new SlashCommandBuilder();
-            cmd.setName(element.name);
-            cmd.setDescription(element.description);
+            // コマンドの登録
+            if(element.type === "chat_input"){
+                const cmd = new SlashCommandBuilder();
+                cmd.setName(element.name);
+                cmd.setDescription(element.description);
+                // cmd.setIntegrationTypes(1);
 
-            // コマンドオプションの追加
-            if(element.subcommand && element.subcommand.length > 0){
-                for(const sub_element of element.subcommand){
-                    const sub_cmd = new SlashCommandSubcommandBuilder();
-                    sub_cmd.setName(sub_element.name);
-                    sub_cmd.setDescription(sub_element.description);
-                    addOptions(sub_cmd, sub_element.option);
-                    cmd.addSubcommand(sub_cmd);
+                // コマンドオプションの追加
+                if(element.subcommand && element.subcommand.length > 0){
+                    for(const sub_element of element.subcommand){
+                        const sub_cmd = new SlashCommandSubcommandBuilder();
+                        sub_cmd.setName(sub_element.name);
+                        sub_cmd.setDescription(sub_element.description);
+                        addOptions(sub_cmd, sub_element.option);
+                        cmd.addSubcommand(sub_cmd);
+                    }
+                }else{addOptions(cmd, element.option);}
+
+                cmds.push(cmd);
+            }
+
+            // エントリーポイントの登録
+            if(element.type === "primary_entry_point"){
+                const cmd = {
+                    name : element.name,
+                    description : element.description,
+                    type : ApplicationCommandType.PrimaryEntryPoint
                 }
-            }else{addOptions(cmd, element.option);}
-
-            cmds.push(cmd);
+                cmds.push(cmd);
+            }
         }
 
         return cmds;
@@ -110,19 +125,8 @@ async function execute(client){
     try{
         const cui_dir = path.join(root_dir, "assets/json/cui");
         const cui_json = await file.mergeJsons(cui_dir);
-        const cmds = buildCUI(cui_json);        
-        const exist_cmds = await client.application.commands.fetch();
-        
-        // 既存のコマンドを削除
-        for(const [id, cmd] of exist_cmds){
-            if(cmd.type === 1) continue;
-            await client.application.commands.delete(id);
-        }
-        
-        // 新しいコマンドを追加
-        for(const cmd of cmds){
-            await client.application.commands.create(cmd);
-        }
+        const cmds = buildCUI(cui_json);
+        await client.application.commands.set(cmds);
 
         return;
     }catch(e){

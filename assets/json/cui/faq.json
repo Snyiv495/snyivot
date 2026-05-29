@@ -2,6 +2,7 @@
     {
         "name" : "string",
         "description" : "string",
+        "type" : "string",
         "subcommand" : [
             {
                 "name" : "string",
@@ -29,6 +30,7 @@
     {
         "name" : "faq",
         "description" : "FAQコマンド",
+        "type" : "chat_input",
         "subcommand" : [
             {
                 "name" : "_ai",

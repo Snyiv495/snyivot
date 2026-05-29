@@ -1,7 +1,7 @@
 /********************
     initialize.js
     スニャイヴ
-    2026/05/04
+    2026/05/29
 ********************/
 
 module.exports = {
@@ -33,7 +33,7 @@ async function execute(client, map){
         map.set("readme_md", readme_md);
 
         // CUI の作成
-        await cui.exe(client, map);
+        await cui.exe(client);
 
         // GUI の作成
         await gui.exe(map);

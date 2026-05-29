@@ -2,6 +2,7 @@
     {
         "name" : "string",
         "description" : "string",
+        "type" : "string",
         "subcommand" : [
             {
                 "name" : "string",

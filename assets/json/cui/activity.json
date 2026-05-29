@@ -28,15 +28,9 @@
         ]
     },
     {
-        "name" : "omikuji",
-        "description" : "おみくじコマンド",
-        "type" : "chat_input",
-        "subcommand" : [
-            {
-                "name" : "_draw",
-                "description" : "今日のおみくじをひきます",
-                "option" : []
-            }
-        ]
+        "name" : "Activity起動",
+        "description" : "Activityを起動します",
+        "type" : "primary_entry_point",
+        "subcommand" : []
     }
 ]
