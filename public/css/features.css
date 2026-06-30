@@ -1,0 +1,171 @@
+/* ================================================================
+   features.css
+   AI案内 / おみくじ / FAQ 用スタイル
+   ================================================================ */
+
+/* ======== AI案内 ======== */
+.ai-guide-card {
+    max-width: 520px; margin: 0 auto;
+    background: var(--surface-card);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius-lg);
+    padding: 28px 20px;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    text-align: center;
+}
+.ai-guide-icon { font-size: 48px; line-height: 1; }
+.ai-guide-title {
+    font-size: 17px; font-weight: 700; letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--text) 30%, var(--accent3));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.ai-guide-body { font-size: 13px; color: var(--text2); line-height: 1.8; }
+.ai-guide-examples {
+    width: 100%;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 8px;
+    text-align: left;
+}
+.ai-example-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent3); margin-bottom: 4px; }
+.ai-example-row { display: flex; align-items: baseline; gap: 10px; font-size: 13px; color: var(--text2); }
+.ai-example-tag {
+    font-size: 10px; font-weight: 700; color: var(--accent3);
+    background: var(--accent-dim); border: 1px solid var(--border2);
+    border-radius: 6px; padding: 2px 7px; flex-shrink: 0;
+}
+.ai-guide-note { font-size: 11px; color: var(--text3); }
+
+/* ======== おみくじ 神社 ======== */
+.omikuji-shrine {
+    max-width: 520px; margin: 0 auto;
+    background: var(--surface-card); border: 1px solid var(--border2);
+    border-radius: var(--radius-lg); padding: 36px 20px;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    text-align: center;
+}
+.omikuji-shrine-icon { font-size: 52px; line-height: 1; }
+.omikuji-shrine-title { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+.omikuji-shrine-desc  { font-size: 13px; color: var(--text2); line-height: 1.8; }
+.omikuji-draw-btn { max-width: 240px; margin-top: 8px; }
+
+/* ======== おみくじ 引き中 ======== */
+.omikuji-drawing-wrap {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    height: 100%; gap: 32px; padding: 40px 20px;
+}
+.omikuji-shake-container { position: relative; }
+.omikuji-box {
+    font-size: 80px; line-height: 1;
+    display: block;
+    animation: omikujiShake 0.5s infinite;
+    transform-origin: center bottom;
+    filter: drop-shadow(0 0 20px rgba(139,92,246,0.5));
+}
+@keyframes omikujiShake {
+    0%   { transform: rotate(-8deg) scale(1.0); }
+    25%  { transform: rotate(8deg)  scale(1.05); }
+    50%  { transform: rotate(-6deg) scale(1.0); }
+    75%  { transform: rotate(6deg)  scale(1.05); }
+    100% { transform: rotate(-8deg) scale(1.0); }
+}
+.omikuji-drawing-steps { display: flex; flex-direction: column; gap: 10px; text-align: center; }
+.omikuji-step {
+    font-size: 13px; color: var(--text3);
+    opacity: 0; transition: opacity 0.5s;
+}
+.omikuji-step.visible { opacity: 1; color: var(--text2); }
+.omikuji-step.done    { opacity: 0.4; text-decoration: line-through; }
+
+/* ======== おみくじ 結果 ======== */
+.omikuji-result-card {
+    --omikuji-color: #8b5cf6;
+    max-width: 520px; margin: 0 auto;
+    background: var(--surface-card);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: 0 0 40px rgba(139,92,246,0.12);
+}
+.omikuji-result-card::before {
+    content: '';
+    display: block; height: 4px;
+    background: linear-gradient(90deg, transparent, var(--omikuji-color), transparent);
+}
+.omikuji-result-date {
+    font-size: 11px; color: var(--text3); text-align: center;
+    padding: 12px 16px 0;
+}
+/* 再表示バナー（カード外） */
+.omikuji-cached-banner {
+    max-width: 520px; margin: 0 auto 10px;
+    background: rgba(196,181,253,0.08);
+    border: 1px solid rgba(196,181,253,0.25);
+    border-radius: var(--radius);
+    padding: 9px 14px;
+    font-size: 12px; font-weight: 500; color: var(--accent3);
+    display: flex; align-items: center; gap: 8px;
+}
+.omikuji-cached-icon { font-size: 14px; flex-shrink: 0; }
+/* ラッキーカラー */
+.omikuji-color-value { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.omikuji-color-swatch {
+    width: 18px; height: 18px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.15);
+    flex-shrink: 0;
+    display: inline-block;
+}
+.omikuji-fortune-wrap {
+    text-align: center; padding: 20px 16px 16px;
+}
+.omikuji-fortune-label { font-size: 11px; color: var(--text3); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.1em; }
+.omikuji-fortune {
+    font-size: 42px; font-weight: 900; letter-spacing: -0.03em;
+    text-shadow: 0 0 30px currentColor;
+    transition: color 0.5s;
+}
+.omikuji-result-grid {
+    display: flex; flex-direction: column;
+    gap: 1px; background: var(--border); border-top: 1px solid var(--border);
+}
+.omikuji-result-item {
+    background: var(--surface-card);
+    padding: 12px 16px;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+}
+.omikuji-result-full { flex-direction: column; align-items: stretch; gap: 5px; }
+.omikuji-result-label { font-size: 11px; color: var(--text3); flex-shrink: 0; }
+.omikuji-result-value { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.6; text-align: right; }
+.omikuji-result-full .omikuji-result-value { text-align: left; }
+
+/* ======== FAQ ======== */
+.faq-intro {
+    max-width: 520px; margin: 0 auto 14px;
+    font-size: 13px; color: var(--text3);
+}
+.faq-question-list {
+    max-width: 520px; margin: 0 auto;
+    display: flex; flex-direction: column; gap: 6px;
+}
+.faq-q-row {
+    background: var(--surface-card); border: 1px solid var(--border2);
+    border-radius: var(--radius); padding: 13px 16px;
+    font-size: 13px; font-weight: 500; color: var(--text2);
+    cursor: pointer; transition: all 0.15s;
+}
+.faq-q-row:hover { background: var(--surface3); color: var(--text); border-color: var(--accent); }
+.faq-q-row:active { transform: scale(0.99); }
+
+.faq-answer-body {
+    font-size: 13px; color: var(--text2); line-height: 1.8;
+    white-space: pre-wrap;
+}
+.faq-answer-fields { max-width: 520px; margin: 0 auto; }
+.faq-field {
+    background: var(--surface-card); border: 1px solid var(--border2);
+    border-radius: var(--radius); padding: 12px 16px; margin-bottom: 8px;
+}
+.faq-field-name  { font-size: 11px; font-weight: 700; color: var(--accent3); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.05em; }
+.faq-field-value { font-size: 13px; color: var(--text2); line-height: 1.7; }

@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>すにゃBot</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg:          #0a0b12;
+            --surface:     #141520;
+            --surface2:    #1a1b2e;
+            --surface3:    #212240;
+            --border:      rgba(139,92,246,0.12);
+            --border2:     rgba(139,92,246,0.28);
+            --text:        #f0eeff;
+            --text2:       #9e9ec8;
+            --text3:       #5a5a80;
+            --accent:      #8b5cf6;
+            --accent2:     #6d28d9;
+            --accent3:     #a78bfa;
+            --accent-glow: rgba(139,92,246,0.30);
+            --accent-dim:  rgba(139,92,246,0.12);
+            --success:     #34d399;
+            --warn:        #fbbf24;
+            --danger:      #f87171;
+            --danger-glow: rgba(248,113,113,0.25);
+            --radius:      10px;
+            --radius-lg:   16px;
+            --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+        }
+
+        html, body { height: 100%; height: 100dvh; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font);
+            font-size: 14px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed; inset: 0;
+            background:
+                radial-gradient(ellipse 60% 40% at 20% 0%, rgba(109,40,217,0.14) 0%, transparent 60%),
+                radial-gradient(ellipse 40% 30% at 80% 100%, rgba(139,92,246,0.08) 0%, transparent 50%);
+            pointer-events: none; z-index: 0;
+        }
+
+        /* ======== レイアウト ======== */
+        .main { flex: 1; overflow: hidden; position: relative; z-index: 1; }
+
+        .screen {
+            position: absolute; inset: 0;
+            overflow-y: auto; -webkit-overflow-scrolling: touch;
+            padding: 20px 16px 40px;
+            opacity: 0; pointer-events: none;
+            transform: translateY(10px);
+            transition: opacity 0.22s ease, transform 0.22s ease;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .screen.active { opacity: 1; pointer-events: auto; transform: translateY(0); }
+
+        /* 各画面のコンテンツ幅を統一 */
+        .screen > * { width: 100%; max-width: 520px; }
+
+        /* 記憶の塔の探索画面はコンテンツ量が多いため上揃え・幅を拡張 */
+        #screen-tower-play {
+            justify-content: flex-start;
+            padding-top: max(12px, env(safe-area-inset-top, 12px));
+            padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
+        }
+        #screen-tower-play > * { max-width: 680px; }
+
+
+
+        /* トップは縦中央（activeの時だけflexを上書き） */
+        #screen-top.active {
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            padding-top: 0; padding-bottom: 0;
+        }
+
+        /* スプラッシュも縦中央（activeの時だけflexを上書き） */
+        #screen-splash.active {
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            padding: 0;
+        }
+
+        /* ======== スプラッシュ ======== */
+        .splash-wrap {
+            display: flex; flex-direction: column;
+            align-items: center; gap: 28px;
+        }
+
+        .splash-visual {
+            position: relative;
+            width: 96px; height: 96px;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* パルスリング */
+        .splash-pulse {
+            position: absolute;
+            width: 96px; height: 96px;
+            border-radius: 50%;
+            border: 2px solid rgba(139,92,246,0.4);
+            animation: splashPulse 2s ease-out infinite;
+        }
+        .splash-pulse-2 { animation-delay: 1s; }
+        @keyframes splashPulse {
+            0%   { transform: scale(0.8);  opacity: 0.9; }
+            100% { transform: scale(1.5);  opacity: 0;   }
+        }
+
+        /* 回転リング */
+        .splash-ring-svg {
+            position: absolute; inset: 0;
+            width: 100%; height: 100%;
+            transform: rotate(-90deg);
+            animation: splashSpin 1.4s linear infinite;
+        }
+        @keyframes splashSpin { to { transform: rotate(270deg); } }
+        .splash-ring-track { fill: none; stroke: rgba(139,92,246,0.10); stroke-width: 3; }
+        .splash-ring-arc {
+            fill: none;
+            stroke: url(#sg);
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-dasharray: 263;
+            stroke-dashoffset: 185;
+            filter: drop-shadow(0 0 5px rgba(139,92,246,0.7));
+        }
+
+        /* 中央3ドット */
+        .splash-dots {
+            position: relative; z-index: 1;
+            display: flex; align-items: center; gap: 7px;
+        }
+        .splash-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--accent3);
+            animation: splashDot 1.1s ease-in-out infinite;
+        }
+        .splash-dot:nth-child(2) { animation-delay: 0.16s; }
+        .splash-dot:nth-child(3) { animation-delay: 0.32s; }
+        @keyframes splashDot {
+            0%,65%,100% { transform: scale(0.6); opacity: 0.3; }
+            32%          { transform: scale(1.3); opacity: 1;
+                           box-shadow: 0 0 10px rgba(139,92,246,0.8); }
+        }
+
+        .splash-title {
+            font-size: 24px; font-weight: 700; letter-spacing: -0.03em;
+            background: linear-gradient(135deg, var(--text) 20%, var(--accent3));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* ======== トップ ======== */
+        .top-greeting {
+            width: 100%; max-width: 480px;
+            margin-bottom: 22px; text-align: center;
+        }
+        .top-greeting h2 {
+            font-size: 22px; font-weight: 700; letter-spacing: -0.03em;
+            background: linear-gradient(135deg, var(--text) 30%, var(--accent3));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text; line-height: 1.25; margin-bottom: 5px;
+        }
+        .top-greeting p { font-size: 13px; color: var(--text3); }
+
+        .menu-grid {
+            display: grid; grid-template-columns: repeat(2, 1fr);
+            gap: 10px; width: 100%; max-width: 480px;
+        }
+        /* 5枚目のカードは左半分のみ */
+        .menu-card-solo {
+            grid-column: 1 / 2;
+        }
+        .menu-card-solo-right {
+            grid-column: 2 / 3;
+        }
+        .menu-card {
+            background: var(--surface); border: 1px solid var(--border2);
+            border-radius: var(--radius-lg); padding: 18px 14px;
+            cursor: pointer; transition: all 0.18s;
+            display: flex; flex-direction: column; gap: 10px;
+            user-select: none; position: relative; overflow: hidden;
+        }
+        .menu-card::before {
+            content: ''; position: absolute;
+            top: 0; left: 0; right: 0; height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(167,139,250,0.35), transparent);
+        }
+        .menu-card:hover { border-color: var(--accent); background: var(--surface2); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+        .menu-card:active { transform: scale(0.97); }
+
+        .menu-icon {
+            width: 38px; height: 38px; border-radius: var(--radius);
+            display: flex; align-items: center; justify-content: center; font-size: 18px;
+        }
+        .menu-icon.purple { background: rgba(139,92,246,0.15); }
+        .menu-icon.green  { background: rgba(52,211,153,0.12); }
+        .menu-icon.amber  { background: rgba(251,191,36,0.12); }
+        .menu-icon.sky    { background: rgba(56,189,248,0.12); }
+        .menu-card-title { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+        .menu-card-desc  { font-size: 11px; color: var(--text3); line-height: 1.6; }
+
+        /* ======== ページヘッダー ======== */
+        .page-header {
+            display: flex; align-items: center; gap: 10px;
+            margin-bottom: 20px; width: 100%;
+            padding-top: max(4px, env(safe-area-inset-top, 4px));
+        }
+        .back-btn {
+            width: 34px; height: 34px; border-radius: var(--radius);
+            border: 1px solid var(--border2); background: var(--surface);
+            color: var(--text2); cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; transition: all 0.15s; flex-shrink: 0;
+        }
+        .back-btn:hover { background: var(--surface2); color: var(--text); }
+        .page-title { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
+
+        /* ======== サブメニュー ======== */
+        .submenu-grid { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+        .submenu-row {
+            background: var(--surface); border: 1px solid var(--border2);
+            border-radius: var(--radius-lg); padding: 14px 16px;
+            cursor: pointer; transition: all 0.15s;
+            display: flex; align-items: center; gap: 14px; user-select: none;
+        }
+        .submenu-row:hover { border-color: var(--accent); background: var(--surface2); }
+        .submenu-row:active { transform: scale(0.99); }
+        .submenu-icon {
+            width: 36px; height: 36px; border-radius: var(--radius);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; flex-shrink: 0;
+        }
+        .submenu-text { flex: 1; min-width: 0; }
+        .submenu-title { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+        .submenu-desc  { font-size: 11px; color: var(--text3); margin-top: 2px; }
+        .submenu-arrow { color: var(--text3); font-size: 16px; flex-shrink: 0; }
+
+        /* ======== セクション ======== */
+        .section {
+            background: var(--surface); border: 1px solid var(--border2);
+            border-radius: var(--radius-lg); margin-bottom: 10px; overflow: hidden;
+            width: 100%;
+        }
+        .section-label {
+            font-size: 10px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.1em; color: var(--accent3); padding: 12px 16px 8px;
+        }
+        .section-row {
+            padding: 12px 16px; border-top: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        }
+        .section-row:first-of-type { border-top: none; }
+        .section-row.col { flex-direction: column; align-items: stretch; gap: 10px; }
+        .row-label { font-size: 13px; color: var(--text2); flex-shrink: 0; font-weight: 500; }
+        .row-label small { display: block; font-size: 11px; color: var(--text3); margin-top: 2px; font-weight: 400; }
+
+        /* ======== フォーム ======== */
+        select, input[type=text] {
+            background: var(--surface2); border: 1px solid var(--border2);
+            border-radius: var(--radius); color: var(--text);
+            font-size: 13px; font-family: var(--font);
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        select:focus, input[type=text]:focus {
+            outline: none; border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(139,92,246,0.15);
+        }
+        select {
+            padding: 7px 28px 7px 10px; cursor: pointer;
+            appearance: none; -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a5a80' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right 8px center;
+            min-width: 140px; max-width: 190px;
+        }
+        input[type=text] { padding: 8px 12px; width: 100%; }
+        input[type=text]::placeholder { color: var(--text3); }
+
+        /* ======== スライダー ======== */
+        .slider-row { display: flex; align-items: center; gap: 10px; }
+        .slider-row input[type=range] {
+            flex: 1; height: 4px; -webkit-appearance: none; appearance: none;
+            background: var(--surface3); border-radius: 2px; cursor: pointer; outline: none;
+        }
+        .slider-row input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px; height: 18px; border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent3), var(--accent));
+            box-shadow: 0 0 8px var(--accent-glow); cursor: pointer;
+        }
+        .slider-val { font-size: 12px; font-weight: 700; color: var(--accent3); min-width: 38px; text-align: right; }
+
+        /* ======== スタイルチップ ======== */
+        .style-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .style-chip {
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 20px; padding: 5px 13px;
+            font-size: 12px; font-weight: 500; color: var(--text2);
+            cursor: pointer; transition: all 0.15s;
+        }
+        .style-chip:hover { border-color: var(--border2); color: var(--text); }
+        .style-chip.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent3); }
+
+        /* ======== トグル ======== */
+        .toggle { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+        .toggle input { display: none; }
+        .toggle-track {
+            position: absolute; inset: 0; background: var(--surface3);
+            border-radius: 11px; cursor: pointer; transition: background 0.2s;
+            border: 1px solid var(--border2);
+        }
+        .toggle input:checked + .toggle-track { background: var(--accent); border-color: var(--accent); }
+        .toggle-track::after {
+            content: ''; position: absolute;
+            width: 16px; height: 16px; border-radius: 50%;
+            background: white; top: 2px; left: 2px;
+            transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .toggle input:checked + .toggle-track::after { transform: translateX(18px); }
+
+        /* ======== ボタン ======== */
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+            padding: 11px 18px; border-radius: var(--radius);
+            font-size: 13px; font-weight: 600; font-family: var(--font);
+            cursor: pointer; border: none; transition: all 0.15s;
+            letter-spacing: -0.01em; width: 100%;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            color: #fff; box-shadow: 0 4px 18px var(--accent-glow);
+        }
+        .btn-primary:hover { filter: brightness(1.08); }
+        .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; filter: none; }
+        .btn-danger {
+            background: linear-gradient(135deg, #f87171, #dc2626);
+            color: #fff; box-shadow: 0 4px 18px var(--danger-glow);
+        }
+        .btn-danger:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+        .btn-preview {
+            background: var(--surface2); border: 1px solid var(--border2);
+            color: var(--accent3); font-size: 12px; padding: 7px 12px;
+            width: auto; border-radius: var(--radius);
+            transition: all 0.15s;
+        }
+        .btn-preview:hover { background: var(--surface3); border-color: var(--accent); }
+        .btn-preview:disabled { opacity: 0.4; cursor: not-allowed; }
+        .save-wrap { width: 100%; }
+
+        /* ======== タブ ======== */
+        .tab-bar {
+            display: flex; gap: 4px; width: 100%; margin-bottom: 14px;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 4px;
+        }
+        .tab-btn {
+            flex: 1; padding: 7px 10px; border-radius: 7px; border: none;
+            background: transparent; color: var(--text3);
+            font-size: 12px; font-weight: 600; font-family: var(--font); cursor: pointer; transition: all 0.15s;
+        }
+        .tab-btn.active { background: var(--surface3); color: var(--text); }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+
+        /* ======== 認証待ち ======== */
+        .auth-waiting {
+            display: flex; flex-direction: column; align-items: center;
+            gap: 14px; padding: 40px 20px; color: var(--text3); font-size: 13px;
+        }
+        .loading-spinner {
+            width: 22px; height: 22px;
+            border: 2px solid var(--border2); border-top-color: var(--accent);
+            border-radius: 50%; animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ======== トースト ======== */
+        .toast-container {
+            position: fixed;
+            bottom: max(24px, env(safe-area-inset-bottom, 24px));
+            left: 50%; transform: translateX(-50%);
+            display: flex; flex-direction: column; gap: 8px;
+            z-index: 200; pointer-events: none;
+        }
+        .toast {
+            background: rgba(20,21,32,0.96); border: 1px solid var(--border2);
+            border-radius: var(--radius); padding: 10px 16px;
+            font-size: 13px; font-weight: 500; color: var(--text);
+            display: flex; align-items: center; gap: 8px;
+            animation: toastIn 0.2s ease, toastOut 0.3s ease 2.5s forwards;
+            white-space: nowrap; backdrop-filter: blur(12px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+        .toast.success { border-color: rgba(52,211,153,0.35); }
+        .toast.error   { border-color: rgba(248,113,113,0.40); }
+        .toast .tdot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+        .toast.success .tdot { background: var(--success); }
+        .toast.error   .tdot { background: var(--danger); }
+        @keyframes toastIn  { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes toastOut { to{opacity:0;transform:translateY(8px)} }
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 2px; }
+
+        /* ======== AI案内 ======== */
+        .ai-guide-card {
+            width: 100%;
+            background: var(--surface); border: 1px solid var(--border2);
+            border-radius: var(--radius-lg); padding: 28px 20px;
+            display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center;
+        }
+        .ai-guide-icon { font-size: 48px; line-height: 1; }
+        .ai-guide-title { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
+        .ai-guide-body  { font-size: 13px; color: var(--text2); line-height: 1.8; }
+        .ai-guide-examples {
+            width: 100%; background: var(--surface2); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 14px 16px;
+            display: flex; flex-direction: column; gap: 8px; text-align: left;
+        }
+        .ai-example-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent3); margin-bottom: 4px; }
+        .ai-example-row { display: flex; align-items: baseline; gap: 10px; font-size: 13px; color: var(--text2); }
+        .ai-example-tag {
+            font-size: 10px; font-weight: 700; color: var(--accent3);
+            background: var(--accent-dim); border: 1px solid var(--border2);
+            border-radius: 6px; padding: 2px 7px; flex-shrink: 0;
+        }
+        .ai-guide-note { font-size: 11px; color: var(--text3); }
+
+        /* ======== おみくじ ======== */
+        .omikuji-shrine {
+            width: 100%;
+            background: var(--surface); border: 1px solid var(--border2);
+            border-radius: var(--radius-lg); padding: 36px 20px;
+            display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center;
+        }
+        .omikuji-shrine-icon  { font-size: 52px; line-height: 1; }
+        .omikuji-shrine-title { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+        .omikuji-shrine-desc  { font-size: 13px; color: var(--text2); line-height: 1.8; }
+        .omikuji-draw-btn { max-width: 240px; margin-top: 8px; }
+
+        .omikuji-drawing-wrap {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            height: 100%; gap: 32px; padding: 40px 20px;
+        }
+        .omikuji-box {
+            font-size: 80px; line-height: 1; display: block;
+            animation: omikujiShake 0.5s infinite; transform-origin: center bottom;
+            filter: drop-shadow(0 0 20px rgba(139,92,246,0.5));
+        }
+        @keyframes omikujiShake {
+            0%   { transform: rotate(-8deg)  scale(1.00); }
+            25%  { transform: rotate( 8deg)  scale(1.05); }
+            50%  { transform: rotate(-6deg)  scale(1.00); }
+            75%  { transform: rotate( 6deg)  scale(1.05); }
+            100% { transform: rotate(-8deg)  scale(1.00); }
+        }
+        .omikuji-drawing-steps { display: none; }
+
+        .omikuji-cached-banner {
+            width: 100%; margin-bottom: 10px;
+            background: rgba(167,139,250,0.08); border: 1px solid rgba(167,139,250,0.25);
+            border-radius: var(--radius); padding: 9px 14px;
+            font-size: 12px; font-weight: 500; color: var(--accent3);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .omikuji-cached-icon { font-size: 14px; flex-shrink: 0; }
+
+        .omikuji-result-card {
+            --omikuji-color: #8b5cf6;
+            width: 100%;
+            background: var(--surface); border: 1px solid var(--border2);
+            border-radius: var(--radius-lg); overflow: hidden;
+        }
+        .omikuji-result-card::before {
+            content: ''; display: block; height: 4px;
+            background: linear-gradient(90deg, transparent, var(--omikuji-color), transparent);
+        }
+        .omikuji-result-date  { font-size: 11px; color: var(--text3); text-align: center; padding: 12px 16px 0; }
+        .omikuji-fortune-wrap { text-align: center; padding: 20px 16px 16px; }
+        .omikuji-fortune-label { font-size: 11px; color: var(--text3); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.1em; }
+        .omikuji-fortune { font-size: 42px; font-weight: 900; letter-spacing: -0.03em; text-shadow: 0 0 30px currentColor; transition: color 0.5s; }
+
+        .omikuji-result-grid {
+            display: flex; flex-direction: column;
+            gap: 1px; background: var(--border); border-top: 1px solid var(--border);
+        }
+        .omikuji-result-item {
+            background: var(--surface); padding: 12px 16px;
+            display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+        }
+        .omikuji-result-full { flex-direction: column; align-items: stretch; gap: 5px; }
+        .omikuji-result-label { font-size: 11px; color: var(--text3); flex-shrink: 0; }
+        .omikuji-result-value { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.6; text-align: right; }
+        .omikuji-result-full .omikuji-result-value { text-align: left; }
+        .omikuji-color-value { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+        .omikuji-color-swatch {
+            width: 18px; height: 18px; border-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.15); flex-shrink: 0; display: inline-block;
+        }
+
+        /* ======== FAQ ======== */
+        .faq-intro { width: 100%; margin-bottom: 14px; font-size: 13px; color: var(--text3); }
+        .faq-question-list { width: 100%; display: flex; flex-direction: column; gap: 6px; }
+        .faq-q-row {
+            background: var(--surface); border: 1px solid var(--border2);
+            border-radius: var(--radius); padding: 13px 16px;
+            font-size: 13px; font-weight: 500; color: var(--text2);
+            cursor: pointer; transition: all 0.15s;
+        }
+        .faq-q-row:hover { background: var(--surface2); color: var(--text); border-color: var(--accent); }
+        .faq-q-row:active { transform: scale(0.99); }
+        .faq-answer-body { font-size: 13px; color: var(--text2); line-height: 1.8; white-space: pre-wrap; }
+        .faq-answer-fields { width: 100%; }
+        .faq-field {
+            background: var(--surface); border: 1px solid var(--border2);
+            border-radius: var(--radius); padding: 12px 16px; margin-bottom: 8px;
+        }
+        .faq-field-name  { font-size: 11px; font-weight: 700; color: var(--accent3); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .faq-field-value { font-size: 13px; color: var(--text2); line-height: 1.7; }
+
+/* ======== 記憶の塔 ======== */
+.tower-hud {
+    display: flex; gap: 12px;
+    margin: 0 auto 12px;
+    width: 100%;
+}
+.tower-stat { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.tower-stat-label { font-size: 10px; color: var(--text3); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.tower-bar {
+    height: 8px; border-radius: 4px;
+    background: var(--surface2); border: 1px solid var(--border);
+    overflow: hidden;
+}
+.tower-bar-fill { height: 100%; border-radius: 4px; transition: width 0.25s ease; }
+.tower-bar-hp { background: linear-gradient(90deg, #f87171, #fb923c); }
+.tower-bar-satiety { background: linear-gradient(90deg, #34d399, #4ade80); }
+.tower-bar-exp { background: linear-gradient(90deg, #60a5fa, #a78bfa); }
+.tower-stat-val { font-size: 11px; color: var(--text2); font-weight: 600; }
+
+.tower-board-wrap {
+    width: 100%; margin: 0 auto 10px;
+    background: var(--surface); border: 1px solid var(--border2);
+    border-radius: var(--radius-lg); padding: 8px;
+    max-height: 46vh;
+    display: flex; align-items: center; justify-content: center;
+}
+.tower-board { width: 100%; height: 100%; max-height: 44vh; display: block; }
+
+.tower-controls {
+    width: 100%; margin: 0 auto 10px;
+    display: flex; gap: 16px; align-items: flex-start;
+    flex-wrap: wrap;
+}
+.tower-dpad {
+    display: grid;
+    grid-template-areas: ". up ." "left . right" ". down .";
+    grid-template-columns: 40px 40px 40px;
+    grid-template-rows: 40px 40px 40px;
+    gap: 4px;
+    flex-shrink: 0;
+}
+.tower-dpad-btn {
+    background: var(--surface); border: 1px solid var(--border2);
+    border-radius: var(--radius); color: var(--text2);
+    font-size: 16px; cursor: pointer; transition: all 0.1s;
+}
+.tower-dpad-btn:hover { background: var(--surface2); border-color: var(--accent); }
+.tower-dpad-btn:active { transform: scale(0.92); background: var(--accent-dim); }
+
+.tower-side-actions { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 160px; }
+.tower-equipment { display: flex; gap: 6px; }
+.tower-equip-slot {
+    flex: 1;
+    background: var(--surface2); border: 1px solid var(--border2);
+    border-radius: var(--radius); padding: 6px 10px;
+    font-size: 11px; color: var(--text3); cursor: pointer;
+    transition: all 0.15s; text-align: center;
+}
+.tower-equip-slot.filled { color: var(--accent3); border-color: var(--accent); background: var(--accent-dim); }
+.tower-equip-slot:hover { border-color: var(--accent); }
+.tower-inventory { display: flex; flex-wrap: wrap; gap: 6px; max-height: 70px; overflow-y: auto; }
+.tower-item-chip {
+    background: var(--surface2); border: 1px solid var(--border2);
+    border-radius: var(--radius); padding: 5px 10px;
+    font-size: 11px; color: var(--text2); cursor: pointer;
+    transition: all 0.15s;
+}
+.tower-item-chip:hover { border-color: var(--accent); color: var(--text); background: var(--surface3); }
+.tower-item-chip.is-equip { border-color: rgba(167,139,250,0.4); color: var(--accent3); }
+.tower-item-chip.is-unidentified { border-color: rgba(251,191,36,0.4); color: #fbbf24; border-style: dashed; }
+.tower-item-chip.is-localdrop { border-color: rgba(96,165,250,0.4); color: #60a5fa; }
+
+.tower-confirm-overlay {
+    position: fixed; inset: 0; z-index: 300;
+    background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+}
+.tower-confirm-box {
+    background: var(--surface); border: 1px solid var(--border2);
+    border-radius: var(--radius-lg); padding: 22px 20px;
+    max-width: 360px; width: 100%;
+    display: flex; flex-direction: column; gap: 16px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+}
+.tower-confirm-message { font-size: 13px; color: var(--text2); line-height: 1.7; white-space: pre-line; }
+.tower-confirm-buttons { display: flex; gap: 8px; }
+.tower-confirm-buttons .btn { width: auto; flex: 1; }
+.tower-minimap-box { max-width: 420px; }
+
+.tower-log {
+    width: 100%; margin: 0 auto;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 14px;
+    font-size: 12px; color: var(--text3);
+    min-height: 100px; max-height: 22vh; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 3px;
+}
+.tower-log-line { color: var(--text2); }
+.tower-log-line:last-child { color: var(--accent3); font-weight: 600; }
+    </style>
+</head>
+<body>
+<div class="main">
+
+    <!-- ===== スプラッシュ ===== -->
+    <div class="screen active" id="screen-splash">
+        <div class="splash-wrap">
+            <div class="splash-visual">
+                <div class="splash-pulse"></div>
+                <div class="splash-pulse splash-pulse-2"></div>
+                <svg class="splash-ring-svg" viewBox="0 0 100 100">
+                    <defs>
+                        <linearGradient id="sg" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="#c4b5fd"/>
+                            <stop offset="100%" stop-color="#6d28d9"/>
+                        </linearGradient>
+                    </defs>
+                    <circle class="splash-ring-track" cx="50" cy="50" r="42"/>
+                    <circle class="splash-ring-arc"   cx="50" cy="50" r="42"/>
+                </svg>
+                <div class="splash-dots">
+                    <span class="splash-dot"></span>
+                    <span class="splash-dot"></span>
+                    <span class="splash-dot"></span>
+                </div>
+            </div>
+            <div class="splash-title">すにゃBot</div>
+        </div>
+    </div>
+
+    <!-- ===== トップ ===== -->
+    <div class="screen" id="screen-top">
+        <div class="top-greeting">
+            <h2 id="greeting-text">こんにちは</h2>
+            <p>利用したい機能を選んでください</p>
+        </div>
+        <div class="menu-grid">
+            <div class="menu-card" data-screen="ai">
+                <div class="menu-icon green">🤖</div>
+                <div class="menu-card-title">AI機能</div>
+                <div class="menu-card-desc">質問や要望に応答します</div>
+            </div>
+            <div class="menu-card" data-screen="omikuji">
+                <div class="menu-icon amber">🎴</div>
+                <div class="menu-card-title">おみくじ</div>
+                <div class="menu-card-desc">1日1回おみくじを引けます</div>
+            </div>
+            <div class="menu-card" data-screen="reaction">
+                <div class="menu-icon purple">🌟</div>
+                <div class="menu-card-title">リアクション</div>
+                <div class="menu-card-desc">メッセージへのリアクションで遊べます</div>
+            </div>
+            <div class="menu-card" data-screen="read-menu">
+                <div class="menu-icon sky">🔊</div>
+                <div class="menu-card-title">読み上げ</div>
+                <div class="menu-card-desc">開始・終了・設定の操作ができます</div>
+            </div>
+            <div class="menu-card menu-card-disabled" data-screen="tower">
+                <div class="menu-icon" style="background:rgba(167,139,250,0.18)">🗼</div>
+                <div class="menu-card-title">記憶の塔</div>
+                <div class="menu-card-desc">製作中</div>
+            </div>
+            <div class="menu-card" data-screen="faq">
+                <div class="menu-icon" style="background:rgba(251,191,36,0.12)">❓</div>
+                <div class="menu-card-title">FAQ</div>
+                <div class="menu-card-desc">使い方を確認できます</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 読み上げメニュー ===== -->
+    <div class="screen" id="screen-read-menu">
+        <div class="page-header">
+            <button class="back-btn" data-screen="top">←</button>
+            <span class="page-title">読み上げ</span>
+        </div>
+        <div class="submenu-grid">
+            <div class="submenu-row" data-action="read-start">
+                <div class="submenu-icon" style="background:rgba(52,211,153,0.12)">▶️</div>
+                <div class="submenu-text">
+                    <div class="submenu-title">読み上げ開始</div>
+                    <div class="submenu-desc">参加中のVCで読み上げを開始します</div>
+                </div>
+                <span class="submenu-arrow">›</span>
+            </div>
+            <div class="submenu-row" data-action="read-end">
+                <div class="submenu-icon" style="background:rgba(248,113,113,0.12)">⏹️</div>
+                <div class="submenu-text">
+                    <div class="submenu-title">読み上げ終了</div>
+                    <div class="submenu-desc">読み上げを停止してVCから退出します</div>
+                </div>
+                <span class="submenu-arrow">›</span>
+            </div>
+            <div class="submenu-row" data-screen="read-dict-add">
+                <div class="submenu-icon" style="background:rgba(139,92,246,0.12)">📖</div>
+                <div class="submenu-text">
+                    <div class="submenu-title">辞書追加</div>
+                    <div class="submenu-desc">読み方を辞書に登録します</div>
+                </div>
+                <span class="submenu-arrow">›</span>
+            </div>
+            <div class="submenu-row" data-screen="read-dict-del">
+                <div class="submenu-icon" style="background:rgba(251,191,36,0.12)">🗑️</div>
+                <div class="submenu-text">
+                    <div class="submenu-title">辞書削除</div>
+                    <div class="submenu-desc">辞書から単語を削除します</div>
+                </div>
+                <span class="submenu-arrow">›</span>
+            </div>
+            <div class="submenu-row" data-screen="read-user">
+                <div class="submenu-icon" style="background:rgba(56,189,248,0.12)">👤</div>
+                <div class="submenu-text">
+                    <div class="submenu-title">ユーザー設定</div>
+                    <div class="submenu-desc">自分の声やパラメーターを設定します</div>
+                </div>
+                <span class="submenu-arrow">›</span>
+            </div>
+            <div class="submenu-row" data-screen="read-guild">
+                <div class="submenu-icon" style="background:rgba(168,85,247,0.14)">🛠️</div>
+                <div class="submenu-text">
+                    <div class="submenu-title">サーバー設定</div>
+                    <div class="submenu-desc">サーバー全体のデフォルト設定を変更します</div>
+                </div>
+                <span class="submenu-arrow">›</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 辞書追加 ===== -->
+    <div class="screen" id="screen-read-dict-add">
+        <div class="page-header">
+            <button class="back-btn" data-screen="read-menu">←</button>
+            <span class="page-title">辞書追加</span>
+        </div>
+        <div id="dict-add-auth-gate" style="display:none;">
+            <div class="auth-waiting"><div class="loading-spinner"></div><span>認証を待っています...</span></div>
+        </div>
+        <div id="dict-add-content" style="display:none;">
+            <div class="section">
+                <div class="section-label">単語情報</div>
+                <div class="section-row col">
+                    <div class="row-label">語句<small>辞書に登録する単語</small></div>
+                    <input type="text" id="dict-surface-input" placeholder="例: すにゃBot">
+                </div>
+                <div class="section-row col">
+                    <div class="row-label">読み（カタカナ）<small>カタカナで読み方を入力</small></div>
+                    <input type="text" id="dict-kana-input" placeholder="例: スニャボット">
+                </div>
+            </div>
+            <div class="save-wrap"><button class="btn btn-primary" id="dict-add-btn">辞書に追加する</button></div>
+        </div>
+    </div>
+
+    <!-- ===== 辞書削除 ===== -->
+    <div class="screen" id="screen-read-dict-del">
+        <div class="page-header">
+            <button class="back-btn" data-screen="read-menu">←</button>
+            <span class="page-title">辞書削除</span>
+        </div>
+        <div id="dict-del-auth-gate" style="display:none;">
+            <div class="auth-waiting"><div class="loading-spinner"></div><span>認証を待っています...</span></div>
+        </div>
+        <div id="dict-del-content" style="display:none;">
+            <div class="section">
+                <div class="section-label">単語情報</div>
+                <div class="section-row col">
+                    <div class="row-label">語句<small>削除する単語を入力</small></div>
+                    <input type="text" id="dict-del-surface-input" placeholder="例: すにゃBot">
+                </div>
+            </div>
+            <div class="save-wrap"><button class="btn btn-danger" id="dict-del-btn">辞書から削除する</button></div>
+        </div>
+    </div>
+
+    <!-- ===== ユーザー設定 ===== -->
+    <div class="screen" id="screen-read-user">
+        <div class="page-header">
+            <button class="back-btn" data-screen="read-menu">←</button>
+            <span class="page-title">ユーザー設定</span>
+        </div>
+        <div id="user-auth-gate" style="display:none;">
+            <div class="auth-waiting"><div class="loading-spinner"></div><span>認証を待っています...</span></div>
+        </div>
+        <div id="user-content" style="display:none;">
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="user-speaker">スピーカー</button>
+                <button class="tab-btn" data-tab="user-param">パラメーター</button>
+            </div>
+            <div class="tab-panel active" id="tab-user-speaker">
+                <div class="section">
+                    <div class="section-label">キャラクター</div>
+                    <div class="section-row">
+                        <div class="row-label">スピーカー<small>声のキャラクター</small></div>
+                        <select id="speaker-select"><option>読み込み中...</option></select>
+                    </div>
+                </div>
+                <div class="section">
+                    <div class="section-label">スタイル</div>
+                    <div class="section-row" style="flex-wrap:wrap; gap:8px;">
+                        <div class="style-chips" id="style-chips"></div>
+                    </div>
+                </div>
+                <!-- キャラクタープレビュー -->
+                <div class="section" id="speaker-preview-section" style="display:none;">
+                    <div class="section-label">プレビュー</div>
+                    <div class="section-row" style="gap:16px; align-items:flex-start;">
+                        <img id="speaker-preview-img" src="" alt="" style="width:80px;height:80px;border-radius:var(--radius);object-fit:cover;flex-shrink:0;background:var(--surface2);">
+                        <div style="flex:1;display:flex;flex-direction:column;gap:8px;">
+                            <div id="speaker-preview-name" style="font-size:13px;font-weight:600;color:var(--text);"></div>
+                            <button class="btn btn-preview" id="speaker-preview-play-btn">
+                                ▶ サンプルを再生
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="save-wrap"><button class="btn btn-primary" id="save-speaker-btn">設定を保存する</button></div>
+            </div>
+            <div class="tab-panel" id="tab-user-param">
+                <div class="section">
+                    <div class="section-label">音声パラメーター</div>
+                    <div class="section-row col">
+                        <div class="row-label">ピッチ<small>声の高さ（-0.15 〜 0.15）</small></div>
+                        <div class="slider-row">
+                            <input type="range" id="pitch-slider" min="-15" max="15" step="1" value="0">
+                            <span class="slider-val" id="pitch-val">0.00</span>
+                        </div>
+                    </div>
+                    <div class="section-row col">
+                        <div class="row-label">抑揚<small>声の強弱（0.00 〜 2.00）</small></div>
+                        <div class="slider-row">
+                            <input type="range" id="intonation-slider" min="0" max="200" step="1" value="100">
+                            <span class="slider-val" id="intonation-val">1.00</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="section">
+                    <div class="section-label">名前設定</div>
+                    <div class="section-row col">
+                        <div class="row-label">ユーザー名の読み方<small>読み上げ時に呼ばれる名前</small></div>
+                        <input type="text" id="username-input" placeholder="例: ほげほげ">
+                    </div>
+                </div>
+                <div class="save-wrap"><button class="btn btn-primary" id="save-param-btn">設定を保存する</button></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== サーバー設定 ===== -->
+    <div class="screen" id="screen-read-guild">
+        <div class="page-header">
+            <button class="back-btn" data-screen="read-menu">←</button>
+            <span class="page-title">サーバー設定</span>
+        </div>
+        <div id="guild-auth-gate" style="display:none;">
+            <div class="auth-waiting"><div class="loading-spinner"></div><span>認証を待っています...</span></div>
+        </div>
+        <div id="guild-content" style="display:none;">
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="guild-speaker">スピーカー</button>
+                <button class="tab-btn" data-tab="guild-param">パラメーター</button>
+            </div>
+            <div class="tab-panel active" id="tab-guild-speaker">
+                <div class="section">
+                    <div class="section-label">デフォルトキャラクター</div>
+                    <div class="section-row">
+                        <div class="row-label">スピーカー<small>サーバーのデフォルト</small></div>
+                        <select id="guild-speaker-select"><option>読み込み中...</option></select>
+                    </div>
+                </div>
+                <div class="section">
+                    <div class="section-label">スタイル</div>
+                    <div class="section-row" style="flex-wrap:wrap; gap:8px;">
+                        <div class="style-chips" id="guild-style-chips"></div>
+                    </div>
+                </div>
+                <div class="section" id="guild-speaker-preview-section" style="display:none;">
+                    <div class="section-label">プレビュー</div>
+                    <div class="section-row" style="gap:16px; align-items:flex-start;">
+                        <img id="guild-speaker-preview-img" src="" alt="" style="width:80px;height:80px;border-radius:var(--radius);object-fit:cover;flex-shrink:0;background:var(--surface2);">
+                        <div style="flex:1;display:flex;flex-direction:column;gap:8px;">
+                            <div id="guild-speaker-preview-name" style="font-size:13px;font-weight:600;color:var(--text);"></div>
+                            <button class="btn btn-preview" id="guild-speaker-preview-play-btn">
+                                ▶ サンプルを再生
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="save-wrap"><button class="btn btn-primary" id="save-guild-speaker-btn">設定を保存する</button></div>
+            </div>
+            <div class="tab-panel" id="tab-guild-param">
+                <div class="section">
+                    <div class="section-label">音声パラメーター</div>
+                    <div class="section-row col">
+                        <div class="row-label">話速<small>読み上げの速さ（0.50 〜 2.00）</small></div>
+                        <div class="slider-row">
+                            <input type="range" id="guild-speed-slider" min="50" max="200" step="1" value="100">
+                            <span class="slider-val" id="guild-speed-val">1.00</span>
+                        </div>
+                    </div>
+                    <div class="section-row col">
+                        <div class="row-label">ピッチ<small>声の高さ（-0.15 〜 0.15）</small></div>
+                        <div class="slider-row">
+                            <input type="range" id="guild-pitch-slider" min="-15" max="15" step="1" value="0">
+                            <span class="slider-val" id="guild-pitch-val">0.00</span>
+                        </div>
+                    </div>
+                    <div class="section-row col">
+                        <div class="row-label">抑揚<small>声の強弱（0.00 〜 2.00）</small></div>
+                        <div class="slider-row">
+                            <input type="range" id="guild-intonation-slider" min="0" max="200" step="1" value="100">
+                            <span class="slider-val" id="guild-intonation-val">1.00</span>
+                        </div>
+                    </div>
+                    <div class="section-row col">
+                        <div class="row-label">音量<small>読み上げの音量（0.00 〜 2.00）</small></div>
+                        <div class="slider-row">
+                            <input type="range" id="guild-volume-slider" min="0" max="200" step="1" value="100">
+                            <span class="slider-val" id="guild-volume-val">1.00</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="section">
+                    <div class="section-label">その他</div>
+                    <div class="section-row">
+                        <div class="row-label">個人設定を上書き<small>ONにすると全員にサーバー設定を適用</small></div>
+                        <label class="toggle">
+                            <input type="checkbox" id="guild-override-toggle">
+                            <div class="toggle-track"></div>
+                        </label>
+                    </div>
+                </div>
+                <div class="save-wrap"><button class="btn btn-primary" id="save-guild-param-btn">設定を保存する</button></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== AI案内 ===== -->
+    <div class="screen" id="screen-ai">
+        <div class="page-header">
+            <button class="back-btn" data-screen="top">←</button>
+            <span class="page-title">AI機能</span>
+        </div>
+        <div class="ai-guide-card">
+            <div class="ai-guide-icon">🤖</div>
+            <div class="ai-guide-title">AI機能はDiscordで使ってね</div>
+            <div class="ai-guide-body">AI機能はテキストチャンネルでBotにメンションして利用する機能だよ。<br><br>Activityの中ではなく、Discordのチャンネルから直接呼びかけてね！</div>
+            <div class="ai-guide-examples">
+                <div class="ai-example-label">使い方の例</div>
+                <div class="ai-example-row"><span class="ai-example-tag">質問</span><span>すにゃbotは何ができるの？</span></div>
+                <div class="ai-example-row"><span class="ai-example-tag">機能</span><span>すにゃbot 読みあげを開始して</span></div>
+                <div class="ai-example-row"><span class="ai-example-tag">雑談</span><span>おはようすにゃぼ</span></div>
+            </div>
+            <div class="ai-guide-note">詳しい使い方はFAQで確認できるよ</div>
+        </div>
+    </div>
+
+    <!-- ===== リアクション案内 ===== -->
+    <div class="screen" id="screen-reaction">
+        <div class="page-header">
+            <button class="back-btn" data-screen="top">←</button>
+            <span class="page-title">リアクション</span>
+        </div>
+        <div class="ai-guide-card">
+            <div class="ai-guide-icon">🌟</div>
+            <div class="ai-guide-title">リアクションはDiscordで使ってね</div>
+            <div class="ai-guide-body">リアクション機能はDiscordのメッセージに直接リアクションをすることで利用する機能だよ。<br><br>Activityの中ではなく、Discordのチャンネル上で操作してね！</div>
+            <div class="ai-guide-examples">
+                <div class="ai-example-label">使い方の例</div>
+                <div class="ai-example-row"><span class="ai-example-tag">魚拓</span><span>⬛⬜🟥🟧🟨🟩🟦🟪🟫 のどれかをリアクション</span></div>
+                <div class="ai-example-row"><span class="ai-example-tag">削除</span><span>魚拓メッセージに ✂️ をリアクション</span></div>
+            </div>
+            <div class="ai-guide-note">詳しい使い方はFAQで確認できるよ</div>
+        </div>
+    </div>
+
+    <!-- ===== おみくじトップ ===== -->
+    <div class="screen" id="screen-omikuji">
+        <div class="page-header">
+            <button class="back-btn" data-screen="top">←</button>
+            <span class="page-title">おみくじ</span>
+        </div>
+        <div id="omikuji-auth-gate" style="display:none;">
+            <div class="auth-waiting"><div class="loading-spinner"></div><span>認証を待っています...</span></div>
+        </div>
+        <div id="omikuji-top-content" style="display:none;">
+            <div class="omikuji-shrine">
+                <div class="omikuji-shrine-icon">⛩️</div>
+                <div class="omikuji-shrine-title">今日の運勢を占おう</div>
+                <div class="omikuji-shrine-desc">1日1回おみくじを引けるよ<br>すでに引いている場合は今日の結果を再表示するよ</div>
+                <button class="btn btn-primary omikuji-draw-btn" id="omikuji-draw-btn">🥠 おみくじを引く</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== おみくじ引き中 ===== -->
+    <div class="screen" id="screen-omikuji-drawing">
+        <div class="omikuji-drawing-wrap">
+            <div class="omikuji-box">🥠</div>
+            <div class="omikuji-drawing-steps">
+                <div class="omikuji-step" id="omikuji-step-1">神様にお祈り中...</div>
+                <div class="omikuji-step" id="omikuji-step-2">おみくじを振っています...</div>
+                <div class="omikuji-step" id="omikuji-step-3">運勢を読み取っています...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== おみくじ結果 ===== -->
+    <div class="screen" id="screen-omikuji-result">
+        <div class="page-header" style="max-width:520px; margin-left:auto; margin-right:auto;">
+            <button class="back-btn" data-screen="omikuji">←</button>
+            <span class="page-title">おみくじの結果</span>
+        </div>
+        <div class="omikuji-cached-banner" id="omikuji-cached-note" style="display:none;">
+            <span class="omikuji-cached-icon">🔄</span>今日はすでに引いているよ（再表示）
+        </div>
+        <div class="omikuji-result-card" id="omikuji-result-card">
+            <div class="omikuji-result-date" id="omikuji-date"></div>
+            <div class="omikuji-fortune-wrap">
+                <div class="omikuji-fortune-label">運勢</div>
+                <div class="omikuji-fortune" id="omikuji-fortune">？</div>
+            </div>
+            <div class="omikuji-result-grid">
+                <div class="omikuji-result-item">
+                    <div class="omikuji-result-label">🎙️ 今日の声</div>
+                    <div class="omikuji-result-value" id="omikuji-speaker">？</div>
+                </div>
+                <div class="omikuji-result-item">
+                    <div class="omikuji-result-label">🎁 ラッキーアイテム</div>
+                    <div class="omikuji-result-value" id="omikuji-item">？</div>
+                </div>
+                <div class="omikuji-result-item">
+                    <div class="omikuji-result-label">🍽️ 夕食</div>
+                    <div class="omikuji-result-value" id="omikuji-dinner">？</div>
+                </div>
+                <div class="omikuji-result-item">
+                    <div class="omikuji-result-label">🎨 ラッキーカラー</div>
+                    <div class="omikuji-result-value omikuji-color-value">
+                        <span class="omikuji-color-swatch" id="omikuji-color-swatch"></span>
+                        <span id="omikuji-color-code">？</span>
+                    </div>
+                </div>
+                <div class="omikuji-result-item omikuji-result-full">
+                    <div class="omikuji-result-label">⚔️ 今日のクエスト</div>
+                    <div class="omikuji-result-value" id="omikuji-quest">？</div>
+                </div>
+                <div class="omikuji-result-item omikuji-result-full">
+                    <div class="omikuji-result-label">💬 アドバイス</div>
+                    <div class="omikuji-result-value" id="omikuji-advice">？</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== FAQ カテゴリ ===== -->
+    <div class="screen" id="screen-faq">
+        <div class="page-header">
+            <button class="back-btn" data-screen="top">←</button>
+            <span class="page-title">FAQ</span>
+        </div>
+        <div class="faq-intro">確認したい機能のカテゴリを選んでね</div>
+        <div class="submenu-grid">
+            <div class="submenu-row" data-faq-category="faq_ai">
+                <div class="submenu-icon" style="background:rgba(52,211,153,0.12)">🤖</div>
+                <div class="submenu-text"><div class="submenu-title">AI機能</div><div class="submenu-desc">AI機能について</div></div>
+                <span class="submenu-arrow">›</span>
+            </div>
+            <div class="submenu-row" data-faq-category="faq_omikuji">
+                <div class="submenu-icon" style="background:rgba(251,191,36,0.12)">🥠</div>
+                <div class="submenu-text"><div class="submenu-title">おみくじ</div><div class="submenu-desc">おみくじ機能について</div></div>
+                <span class="submenu-arrow">›</span>
+            </div>
+            <div class="submenu-row" data-faq-category="faq_reaction">
+                <div class="submenu-icon" style="background:rgba(139,92,246,0.12)">🌟</div>
+                <div class="submenu-text"><div class="submenu-title">リアクション</div><div class="submenu-desc">リアクション機能について</div></div>
+                <span class="submenu-arrow">›</span>
+            </div>
+            <div class="submenu-row" data-faq-category="faq_read">
+                <div class="submenu-icon" style="background:rgba(56,189,248,0.12)">🎙️</div>
+                <div class="submenu-text"><div class="submenu-title">読み上げ</div><div class="submenu-desc">読み上げ機能について</div></div>
+                <span class="submenu-arrow">›</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== FAQ 質問一覧 ===== -->
+    <div class="screen" id="screen-faq-detail">
+        <div class="page-header">
+            <button class="back-btn" data-screen="faq">←</button>
+            <span class="page-title" id="faq-detail-title">FAQ</span>
+        </div>
+        <div class="faq-question-list" id="faq-question-list"></div>
+    </div>
+
+    <!-- ===== FAQ 回答 ===== -->
+    <div class="screen" id="screen-faq-answer">
+        <div class="page-header">
+            <button class="back-btn" id="faq-answer-back" data-screen="faq-detail">←</button>
+            <span class="page-title" id="faq-answer-title"></span>
+        </div>
+        <div class="section">
+            <div class="section-label">回答</div>
+            <div class="section-row col">
+                <div class="faq-answer-body" id="faq-answer-body"></div>
+            </div>
+        </div>
+        <div class="faq-answer-fields" id="faq-answer-fields"></div>
+    </div>
+
+<!--
+<div class="menu-card" data-screen="tower">
+    <div class="menu-icon" style="background:rgba(167,139,250,0.18)">🗼</div>
+    <div class="menu-card-title">記憶の塔</div>
+    <div class="menu-card-desc">ソロで挑むローグライク探索</div>
+</div>
+-->
+
+<!-- ===== 記憶の塔: トップ（開始 or 再開） ===== -->
+<div class="screen" id="screen-tower">
+    <div class="page-header">
+        <button class="back-btn" data-screen="top">←</button>
+        <span class="page-title">記憶の塔</span>
+    </div>
+    <div id="tower-auth-gate" style="display:none;">
+        <div class="auth-waiting"><div class="loading-spinner"></div><span>認証を待っています...</span></div>
+    </div>
+    <div id="tower-top-content" style="display:none;">
+        <div class="omikuji-shrine">
+            <div class="omikuji-shrine-icon">🗼</div>
+            <div class="omikuji-shrine-title" id="tower-top-title">記憶の塔</div>
+            <div class="omikuji-shrine-desc" id="tower-top-desc">ソロで挑むローグライクダンジョン<br>力尽きたらそこで終わり。記憶を積み重ねよう。</div>
+            <button class="btn btn-primary omikuji-draw-btn" id="tower-start-btn">⚔ 挑戦を始める</button>
+            <div id="tower-awaiting-note" style="display:none; margin-top:10px; font-size:12px; color:var(--accent3);">
+                あなたは現在誰かの救助を待っています。救助されるまで新しい挑戦はできません。
+            </div>
+            <div id="tower-rescue-count" style="margin-top:14px; font-size:11px; color:var(--text3);"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== 記憶の塔: 探索画面 ===== -->
+<div class="screen" id="screen-tower-play">
+    <div class="page-header" style="max-width:680px;">
+        <button class="back-btn" id="tower-exit-btn">←</button>
+        <span class="page-title">記憶の塔</span>
+        <button class="back-btn" id="tower-minimap-btn" style="margin-left:auto;" title="ミニマップ">🗺</button>
+        <span id="tower-floor-label" style="font-size:13px; color:var(--text3); font-weight:600;"></span>
+    </div>
+
+    <div class="tower-hud" style="max-width:680px;">
+        <div class="tower-stat" style="flex:0 0 auto; min-width:48px;">
+            <div class="tower-stat-label">LV</div>
+            <div class="tower-stat-val" id="tower-level-val" style="font-size:16px; font-weight:700; color:var(--accent3);">1</div>
+        </div>
+        <div class="tower-stat">
+            <div class="tower-stat-label">HP</div>
+            <div class="tower-bar"><div class="tower-bar-fill tower-bar-hp" id="tower-hp-fill"></div></div>
+            <div class="tower-stat-val" id="tower-hp-val">--/--</div>
+        </div>
+        <div class="tower-stat">
+            <div class="tower-stat-label">満腹度</div>
+            <div class="tower-bar"><div class="tower-bar-fill tower-bar-satiety" id="tower-satiety-fill"></div></div>
+            <div class="tower-stat-val" id="tower-satiety-val">--/--</div>
+        </div>
+    </div>
+    <div class="tower-hud" style="max-width:680px; margin-top:-8px;">
+        <div class="tower-stat">
+            <div class="tower-stat-label">EXP</div>
+            <div class="tower-bar"><div class="tower-bar-fill tower-bar-exp" id="tower-exp-fill"></div></div>
+            <div class="tower-stat-val" id="tower-exp-val">--/--</div>
+        </div>
+    </div>
+
+    <div class="tower-board-wrap" style="max-width:680px;">
+        <svg id="tower-board" viewBox="0 0 440 360" class="tower-board"></svg>
+    </div>
+
+    <div class="tower-controls" style="max-width:680px;">
+        <div class="tower-dpad">
+            <button class="tower-dpad-btn" data-dx="0" data-dy="-1" style="grid-area:up;">▲</button>
+            <button class="tower-dpad-btn" data-dx="-1" data-dy="0" style="grid-area:left;">◀</button>
+            <button class="tower-dpad-btn" data-dx="1" data-dy="0" style="grid-area:right;">▶</button>
+            <button class="tower-dpad-btn" data-dx="0" data-dy="1" style="grid-area:down;">▼</button>
+        </div>
+        <div class="tower-side-actions">
+            <button class="btn btn-preview" id="tower-descend-btn" style="display:none;">⬇ 次の階へ進む</button>
+            <div class="tower-equipment" id="tower-equipment"></div>
+            <div class="tower-inventory" id="tower-inventory"></div>
+        </div>
+    </div>
+
+    <div class="tower-log" id="tower-log"></div>
+</div>
+
+<!-- ===== 記憶の塔: 残留者発見ダイアログ ===== -->
+<div class="screen" id="screen-tower-remnant">
+    <div class="omikuji-shrine">
+        <div class="omikuji-shrine-icon">🕯️</div>
+        <div class="omikuji-shrine-title">残留者を発見した</div>
+        <div class="omikuji-shrine-desc" id="tower-remnant-desc"></div>
+        <div style="display:flex; flex-direction:column; gap:8px; width:100%; max-width:300px; margin-top:10px;">
+            <select id="tower-remnant-item-select" style="display:none;"></select>
+            <button class="btn btn-primary" id="tower-remnant-give-btn">アイテムを渡して救助する</button>
+            <button class="btn btn-preview" id="tower-remnant-free-btn">何も渡さず救助する</button>
+            <button class="btn btn-preview" id="tower-remnant-skip-btn">救助しない（通過する）</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== 記憶の塔: 全滅時の選択画面 ===== -->
+<div class="screen" id="screen-tower-dead">
+    <div class="omikuji-shrine">
+        <div class="omikuji-shrine-icon">🕯️</div>
+        <div class="omikuji-shrine-title">力尽きた……</div>
+        <div class="omikuji-shrine-desc">記録を残しますか？<br>残せば誰かに救助されるまで再挑戦できなくなります。</div>
+        <div id="tower-bequest-wrap" style="display:none; width:100%; max-width:300px; margin-top:8px;">
+            <select id="tower-bequest-select"></select>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:8px; width:100%; max-width:300px; margin-top:10px;">
+            <button class="btn btn-primary" id="tower-remnant-record-btn">A. 残留者として記録を残す</button>
+            <button class="btn btn-preview" id="tower-remnant-noitem-btn" style="display:none;">何も託さずに記録する</button>
+            <button class="btn btn-danger" id="tower-abandon-btn">B. 記録を残さず撤退する</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== 記憶の塔: 制覇画面 ===== -->
+<div class="screen" id="screen-tower-cleared">
+    <div class="omikuji-shrine">
+        <div class="omikuji-shrine-icon">🏆</div>
+        <div class="omikuji-shrine-title">塔を制覇した！</div>
+        <div class="omikuji-shrine-desc">記憶の塔の頂へたどり着いた。<br>その想いは、これからの探索者の道しるべになる。</div>
+        <button class="btn btn-primary omikuji-draw-btn" id="tower-cleared-back-btn">塔のトップへ戻る</button>
+    </div>
+</div>
+
+</div><!-- /.main -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- 識別前アイテム使用確認ダイアログ -->
+<div class="tower-confirm-overlay" id="tower-confirm-overlay" style="display:none;">
+    <div class="tower-confirm-box">
+        <div class="tower-confirm-message" id="tower-confirm-message"></div>
+        <div class="tower-confirm-buttons">
+            <button class="btn btn-preview" id="tower-confirm-cancel-btn">やめる</button>
+            <button class="btn btn-primary" id="tower-confirm-use-btn">使う</button>
+        </div>
+    </div>
+</div>
+
+<!-- 救助待ち上書き確認ダイアログ -->
+<div class="tower-confirm-overlay" id="tower-rescue-override-overlay" style="display:none;">
+    <div class="tower-confirm-box">
+        <div class="tower-confirm-message">あなたは現在、誰かの救助を待っている状態です。<br>今ここで新しく挑戦すると、その救助待ちの状態は失われます。<br>本当に新しく挑戦しますか？</div>
+        <div class="tower-confirm-buttons">
+            <button class="btn btn-preview" id="tower-rescue-override-cancel-btn">やめる</button>
+            <button class="btn btn-danger" id="tower-rescue-override-confirm-btn">新しく挑戦する</button>
+        </div>
+    </div>
+</div>
+
+<!-- ミニマップオーバーレイ -->
+<div class="tower-confirm-overlay" id="tower-minimap-overlay" style="display:none;">
+    <div class="tower-confirm-box tower-minimap-box">
+        <div class="tower-confirm-message" style="margin-bottom:4px;">探索済みのマップ</div>
+        <svg id="tower-minimap-svg" viewBox="0 0 100 100" style="width:100%; height:auto; background:var(--surface2); border-radius:var(--radius); border:1px solid var(--border2);"></svg>
+        <div class="tower-confirm-buttons">
+            <button class="btn btn-primary" id="tower-minimap-close-btn">閉じる</button>
+        </div>
+    </div>
+</div>
+
+
+<script src="/discord-sdk.js"></script>
+<script src="/js/navigate.js"></script>
+<script src="/js/speakers.js"></script>
+<script src="/js/features/read.js"></script>
+<script src="/js/features/tower.js"></script>
+<script src="/js/features/omikuji.js"></script>
+<script src="/js/features/faq.js"></script>
+<script src="/js/sdk.js"></script>
+<script src="/js/main.js"></script>
+</body>
+</html>

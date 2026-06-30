@@ -94,12 +94,12 @@
                 "fields" : [
                     {
                         "name" : "ℹ️ 更新情報",
-                        "value" : "🆕 1.5.26 一部機能のサービス終了"
+                        "value" : "🆕 1.6.0 アクティビティ機能追加！\n🆕 1.5.26 一部機能のサービス終了"
                     }
                 ],
                 "image" : null,
                 "footer" : {
-                    "text" : "Ver. 1.5.26\nVOICEVOX:春日部つむぎ",
+                    "text" : "Ver. 1.6.0\nVOICEVOX:春日部つむぎ",
                     "url" : null
                 },
                 "color" : "000000"
@@ -139,7 +139,7 @@
                 ],
                 "image" : null,
                 "footer" : {
-                    "text" : "Ver. 1.5.26\nVOICEVOX:春日部つむぎ",
+                    "text" : "Ver. 1.6.0\nVOICEVOX:春日部つむぎ",
                     "url" : null
                 },
                 "color" : "000000"

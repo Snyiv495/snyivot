@@ -20,8 +20,6 @@ const utils = require('../core/utils');
 const vc = require('../core/vc');
 const vv = require('../integrations/voicevox');
 
-const MENU_MAX = 25;
-
 //テキスト整形
 function formatText(message, map){
     try{

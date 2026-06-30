@@ -1,9 +1,10 @@
 {
   "name": "snyivot",
-  "version": "1.5.26",
+  "version": "1.6.0 w",
   "description": "To study javascript for Snyiv",
   "main": "src/index.js",
   "dependencies": {
+    "@discord/embedded-app-sdk": "^2.5.0",
     "@discordjs/opus": "^0.10.0",
     "@discordjs/voice": "^0.19.0",
     "@google/genai": "^1.4.0",
@@ -12,11 +13,13 @@
     "@twemoji/api": "^16.0.1",
     "axios": "^1.6.7",
     "canvas": "^3.2.0",
+    "cors": "^2.8.5",
     "discord.js": "^14.14.1",
     "dotenv": "^16.4.5",
     "express": "^5.2.1",
     "ffmpeg-static": "^5.2.0",
     "keyv": "^4.5.4",
+    "node-fetch": "^2.7.0",
     "tweetnacl": "^1.0.3"
   },
   "scripts": {
@@ -27,5 +30,8 @@
     "bot"
   ],
   "author": "snyiv",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "esbuild": "^0.28.0"
+  }
 }
